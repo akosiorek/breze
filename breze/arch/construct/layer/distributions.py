@@ -38,6 +38,13 @@ class Distribution(object):
     def nll(self, X, inpt=None):
         raise NotImplemented()
 
+class NormalizingFlow(Distribution):
+    def __init__(self, mean_0, var_0, logsum, rng=None):
+        self.mean_0 = mean_0
+        self.var_0 = var_0
+        self.logsum = logsum
+        super(NormalizingFlow, self).__init__(rng) 
+
 
 class DiagGauss(Distribution):
 

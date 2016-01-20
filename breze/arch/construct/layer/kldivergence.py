@@ -1,11 +1,17 @@
 # -*- coding: utf-8 -*-
 
+import numpy as np
 import theano.tensor as T
 
-from distributions import DiagGauss, NormalGauss, Bernoulli
+from distributions import DiagGauss, NormalGauss, Bernoulli, NormalizingFlow
 
 from breze.arch.component.misc import inter_gauss_kl
 
+def normflow_normalgauss_kl(p, q):
+    kl = - 0.5 * T.log(2.0 * np.pi * np.e * p.var_0)
+    kl += q.nll(p.z)
+    kl += p.logdet
+    return kl
 
 def gauss_normalgauss_kl(p, q):
     kl = inter_gauss_kl(p.mean, p.var, var_offset=1e-4)
@@ -33,7 +39,8 @@ def bern_bern_kl(p, q):
 kl_table = {
     (DiagGauss, NormalGauss): gauss_normalgauss_kl,
     (DiagGauss, DiagGauss): gauss_gauss_kl,
-    (Bernoulli,  Bernoulli): bern_bern_kl
+    (Bernoulli,  Bernoulli): bern_bern_kl,
+    (NormalizingFlow, NormalGauss): normflow_normalgauss_kl
 }
 
 
