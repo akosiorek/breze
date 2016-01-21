@@ -8,9 +8,11 @@ from distributions import DiagGauss, NormalGauss, Bernoulli, NormalizingFlow
 from breze.arch.component.misc import inter_gauss_kl
 
 def normflow_normalgauss_kl(p, q):
-    kl = - 0.5 * T.log(2.0 * np.pi * np.e * p.var_0)
+    kl = - p.initial_dist.entropy()
     kl += q.nll(p.z)
-    kl += p.logdet
+    # since kl is coord wise and taking the sum later on
+    # would multiply it with z.shape[1]
+    kl += p.logdet.dimshuffle(0, 'x') / p.z.shape[1]
     return kl
 
 def gauss_normalgauss_kl(p, q):

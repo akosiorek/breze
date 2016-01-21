@@ -38,12 +38,48 @@ class Distribution(object):
     def nll(self, X, inpt=None):
         raise NotImplemented()
 
+    def entropy(self):
+        raise NotImplemented()
+
 class NormalizingFlow(Distribution):
-    def __init__(self, mean_0, var_0, logsum, rng=None):
-        self.mean_0 = mean_0
-        self.var_0 = var_0
-        self.logsum = logsum
+    def __init__(self, initial_dist, logdet, rng=None):
+        self.initial_dist = initial_dist
+        self.logdet = logdet
         super(NormalizingFlow, self).__init__(rng) 
+
+class PlanarNormalizingFlow(NormalizingFlow):
+    def __init__(self, n_layer, n_state, initial_dist, parameters, rng=None):
+        self.n_layer = n_layer
+        self.n_state = n_state
+
+        f = lambda x: T.tanh(x)
+        df = lambda x: 1.0 / T.cosh(x)
+        m = lambda x: - 1.0 + T.log(1.0 + T.exp(x))
+        self.z_0 = initial_dist.sample()
+        self.z = self.z_0
+        logdet = 0.0
+        for i in range(self.n_layer):
+            w = parameters[:,               (n_state * 2 + 1) * i
+                             :n_state * 1 + (n_state * 2 + 1) * i]
+            u = parameters[:, n_state * 1 + (n_state * 2 + 1) * i
+                             :n_state * 2 + (n_state * 2 + 1) * i]
+            b = parameters[:, n_state * 2 + (n_state * 2 + 1) * i
+                             :n_state * 2 + (n_state * 2 + 1) * i + 1]
+            
+            u = u + ((m((w * u).sum(axis=1))
+                    - (w * u).sum(axis=1)).dimshuffle(0, 'x') * w
+                    / (w**2).sum(1).dimshuffle(0, 'x'))
+            
+            logdet -= T.log( abs(1.0 + (u * df( (self.z * w).sum(1)
+                             + b.ravel()).dimshuffle(0, 'x') * w).sum(1) ))
+            self.z = ( self.z
+                + u * f((self.z * w).sum(1) + b.ravel()).dimshuffle(0, 'x'))
+
+        super(PlanarNormalizingFlow, self).__init__(initial_dist, logdet, rng)
+
+    def sample(self, epsilon=None):
+        # TODO: handle new sampling without using only samples from init
+        return self.z
 
 
 class DiagGauss(Distribution):
@@ -83,6 +119,9 @@ class DiagGauss(Distribution):
         ll = weighted_squares - normalization
         return -ll
 
+    def entropy(self):
+        return 0.5 * T.log(2.0 * np.pi * np.e * self.var)
+
 
 class NormalGauss(Distribution):
 
@@ -101,6 +140,9 @@ class NormalGauss(Distribution):
         X_flat = X.flatten()
         nll = -normal_logpdf(X_flat, self.mean.flatten(), self.var.flatten())
         return nll.reshape(X.shape)
+
+    def entropy(self):
+        return 0.5 * T.log(2.0 * np.pi * np.e * self.var)
 
 
 class Bernoulli(Distribution):
