@@ -53,7 +53,7 @@ class PlanarNormalizingFlow(NormalizingFlow):
         self.n_state = n_state
 
         f = lambda x: T.tanh(x)
-        df = lambda x: 1.0 / T.cosh(x)
+        df = lambda x: 1.0 - T.tanh(x) ** 2
         m = lambda x: - 1.0 + T.log(1.0 + T.exp(x))
         self.z_0 = initial_dist.sample()
         self.z = self.z_0
