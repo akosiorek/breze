@@ -7,13 +7,23 @@ from distributions import DiagGauss, NormalGauss, Bernoulli, NormalizingFlow
 
 from breze.arch.component.misc import inter_gauss_kl
 
-def normflow_normalgauss_kl(p, q):
-    kl = - p.initial_dist.entropy()
+from breze.arch.util import wild_reshape
+
+def recover_time(X, time_steps):
+    return wild_reshape(X, (time_steps, -1, X.shape[1]))
+
+def normflow_gauss_kl(p, q):
+    #kl = - p.initial_dist.entropy()
+    kl = - p.initial_dist.nll(p.z_0)
     kl += q.nll(p.z)
     # since kl is coord wise and taking the sum later on
     # would multiply it with z.shape[1]
-    kl += p.logdet.dimshuffle(0, 'x') / p.z.shape[1]
+    if p.z.ndim == 3:
+        kl += wild_reshape(p.logdet, (p.z.shape[0], -1)).dimshuffle(0, 1, 'x') / p.z.shape[2]
+    else:
+        kl += p.logdet.dimshuffle(0, 'x') / p.z.shape[1]
     return kl
+
 
 def gauss_normalgauss_kl(p, q):
     kl = inter_gauss_kl(p.mean, p.var, var_offset=1e-4)
@@ -42,7 +52,8 @@ kl_table = {
     (DiagGauss, NormalGauss): gauss_normalgauss_kl,
     (DiagGauss, DiagGauss): gauss_gauss_kl,
     (Bernoulli,  Bernoulli): bern_bern_kl,
-    (NormalizingFlow, NormalGauss): normflow_normalgauss_kl
+    (NormalizingFlow, NormalGauss): normflow_gauss_kl,
+    (NormalizingFlow, DiagGauss): normflow_gauss_kl
 }
 
 

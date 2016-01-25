@@ -56,7 +56,10 @@ class PlanarNormalizingFlow(NormalizingFlow):
         df = lambda x: 1.0 - T.tanh(x) ** 2
         m = lambda x: - 1.0 + T.log(1.0 + T.exp(x))
         self.z_0 = initial_dist.sample()
-        self.z = self.z_0
+        if self.z_0.ndim == 3:
+            self.z = assert_no_time(self.z_0)
+        else:
+            self.z = self.z_0
         logdet = 0.0
         for i in range(self.n_layer):
             w = parameters[:,               (n_state * 2 + 1) * i
@@ -74,6 +77,9 @@ class PlanarNormalizingFlow(NormalizingFlow):
                              + b.ravel()).dimshuffle(0, 'x') * w).sum(1) ))
             self.z = ( self.z
                 + u * f((self.z * w).sum(1) + b.ravel()).dimshuffle(0, 'x'))
+
+        if self.z_0.ndim == 3:
+            self.z = recover_time(self.z, self.z_0.shape[0])
 
         super(PlanarNormalizingFlow, self).__init__(initial_dist, logdet, rng)
 
