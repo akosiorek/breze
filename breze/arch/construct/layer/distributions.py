@@ -41,11 +41,129 @@ class Distribution(object):
     def entropy(self):
         raise NotImplemented()
 
+
 class NormalizingFlow(Distribution):
-    def __init__(self, initial_dist, logdet, rng=None):
+    def __init__(self, initial_dist, neglogdet, rng=None):
         self.initial_dist = initial_dist
-        self.logdet = logdet
+        self.neglogdet = neglogdet
         super(NormalizingFlow, self).__init__(rng) 
+
+
+def extract_flow_pars(parameters, flow_transfers, n_state):
+    flow_pars = []
+    start = 0
+    for flow_transfer in flow_transfers:
+        if flow_transfer == 'planar':
+            w = parameters[:,               start
+                             :n_state * 1 + start]
+            u = parameters[:, n_state * 1 + start
+                             :n_state * 2 + start]
+            b = parameters[:, n_state * 2 + start
+                             :n_state * 2 + start + 1]
+            flow_pars.append((w, u, b))
+            start += n_state * 2 + 1
+        elif flow_transfer == 'radial':
+            ref = parameters[:,             start
+                                 :n_state + start]
+            alpha = parameters[:, n_state + start
+                                 :n_state + start + 1]
+            beta = parameters[:,  n_state + start + 1
+                                 :n_state + start + 2]
+            flow_pars.append((ref, alpha, beta))
+            start += n_state + 2
+        else:
+            # TODO: set a default case, probably planar
+            raise NotImplementedError
+    return flow_pars
+
+
+def softplus(x):
+    return T.log(1.0 + T.exp(x))
+
+
+def reparametrize(flow_par, flow_transfer):
+    m = lambda x: - 1.0 + T.log(1.0 + T.exp(x))
+    if flow_transfer == 'planar':
+        w, u, b = flow_par
+        u = u + ((-1 + softplus((w * u).sum(axis=1))
+                    - (w * u).sum(axis=1)).dimshuffle(0, 'x') * w
+                    / (w**2).sum(1).dimshuffle(0, 'x'))
+        return w, u, b
+    elif flow_transfer == 'radial':
+        ref, alpha, beta = flow_par
+        alpha = T.exp(alpha)
+        beta = -alpha + softplus(beta)
+        return ref, alpha, beta
+    else:
+        # TODO: set a default case, probably planar
+        raise NotImplementedError
+
+
+def flow(z, flow_par, flow_transfer, n_state=None):
+    f = lambda x: T.tanh(x)
+    df = lambda x: 1.0 - T.tanh(x) ** 2
+    h = lambda x, y: 1.0 / (x + y)
+    dh = lambda x, y: -1.0 / (x + y)**2
+    if flow_transfer == 'planar':
+        w, u, b = flow_par
+        delta_nld = - T.log( abs(1.0 + (u * df( (z * w).sum(1)
+                             + b.ravel()).dimshuffle(0, 'x') * w).sum(1) ))
+        delta_z = u * f((z * w).sum(1) + b.ravel()).dimshuffle(0, 'x')
+    elif flow_transfer == 'radial':
+        ref, alpha, beta = flow_par
+        r = T.sqrt(((z - ref)**2).sum(1)).dimshuffle(0,'x')
+        delta_nld = - T.log(abs(
+                (1.0 + beta * h(alpha, r)) ** (n_state - 1)
+                * (1.0 + beta * h(alpha, r) + beta * dh(alpha, r) * r)
+            )).ravel()
+
+        delta_z = T.Rebroadcast((1,True))(beta * h(alpha,r)) * (z - ref)
+    else:
+        # TODO: set a default case, probably planar
+        raise NotImplementedError
+    return delta_z, delta_nld
+
+
+class GenericNormalizingFlow(NormalizingFlow):
+    def __init__(self, flow_transfers, n_state, initial_dist, parameters,
+                 rng=None):
+        self.flow_transfers = flow_transfers
+        self.n_state = n_state
+
+        self.z_0 = initial_dist.sample()
+        if self.z_0.ndim == 3:
+            self.z = assert_no_time(self.z_0)
+            parameters = assert_no_time(parameters)
+        else:
+            self.z = self.z_0
+
+        neglogdet = 0.0
+
+        flow_pars = extract_flow_pars(parameters, self.flow_transfers,
+                                      self.n_state)
+
+        for flow_par, flow_transfer in zip(flow_pars, flow_transfers):
+            flow_par = reparametrize(flow_par, flow_transfer)
+            delta_z, delta_nld = flow(self.z, flow_par, flow_transfer,
+                                      self.n_state)
+            self.z += delta_z
+            neglogdet += delta_nld
+
+        if self.z_0.ndim == 3:
+            self.z = recover_time(self.z, self.z_0.shape[0])
+
+        super(GenericNormalizingFlow, self).__init__(initial_dist, neglogdet,
+                                                    rng)
+
+    def sample(self, epsilon=None):
+        # TODO: handle new sampling without using only samples from init
+        return self.z
+
+
+
+
+
+
 
 class PlanarNormalizingFlow(NormalizingFlow):
     def __init__(self, n_layer, n_state, initial_dist, parameters, rng=None):
@@ -58,9 +176,10 @@ class PlanarNormalizingFlow(NormalizingFlow):
         self.z_0 = initial_dist.sample()
         if self.z_0.ndim == 3:
             self.z = assert_no_time(self.z_0)
+            parameters = assert_no_time(parameters)
         else:
             self.z = self.z_0
-        logdet = 0.0
+        neglogdet = 0.0
         for i in range(self.n_layer):
             w = parameters[:,               (n_state * 2 + 1) * i
                              :n_state * 1 + (n_state * 2 + 1) * i]
@@ -73,7 +192,7 @@ class PlanarNormalizingFlow(NormalizingFlow):
                     - (w * u).sum(axis=1)).dimshuffle(0, 'x') * w
                     / (w**2).sum(1).dimshuffle(0, 'x'))
             
-            logdet -= T.log( abs(1.0 + (u * df( (self.z * w).sum(1)
+            neglogdet -= T.log( abs(1.0 + (u * df( (self.z * w).sum(1)
                              + b.ravel()).dimshuffle(0, 'x') * w).sum(1) ))
             self.z = ( self.z
                 + u * f((self.z * w).sum(1) + b.ravel()).dimshuffle(0, 'x'))
@@ -81,7 +200,61 @@ class PlanarNormalizingFlow(NormalizingFlow):
         if self.z_0.ndim == 3:
             self.z = recover_time(self.z, self.z_0.shape[0])
 
-        super(PlanarNormalizingFlow, self).__init__(initial_dist, logdet, rng)
+        super(PlanarNormalizingFlow, self).__init__(initial_dist, neglogdet,
+                                                    rng)
+
+    def sample(self, epsilon=None):
+        # TODO: handle new sampling without using only samples from init
+        return self.z
+
+
+class RadialNormalizingFlow(NormalizingFlow):
+    def __init__(self, n_layer, n_state, initial_dist, parameters, rng=None):
+        self.n_layer = n_layer
+        self.n_state = n_state
+
+        h = lambda x, y: 1.0 / (x + y)
+        dh = lambda x, y: -1.0 / (x + y)**2
+        m = lambda x: T.log(1.0 + T.exp(x))
+        self.z_0 = initial_dist.sample()
+        if self.z_0.ndim == 3:
+            self.z = assert_no_time(self.z_0)
+            parameters = assert_no_time(parameters)
+        else:
+            self.z = self.z_0
+        neglogdet = 0.0
+
+        for i in range(self.n_layer):
+            # reference point z_0 in the paper, renamed to ref to avoid
+            # confusion with initial sample z_0 here.
+
+            ref = parameters[:,             (n_state + 2) * i
+                                 :n_state + (n_state + 2) * i]
+            alpha = parameters[:, n_state + (n_state + 2) * i
+                                 :n_state + (n_state + 2) * i + 1]
+            beta = parameters[:,  n_state + (n_state + 2) * i + 1
+                                 :n_state + (n_state + 2) * i + 2]
+
+            alpha = T.exp(alpha)
+            # alpha = T.log(1.0 + T.exp(alpha))
+            beta = -alpha + m(beta)
+            # beta = -alpha + m(beta + alpha)
+
+            r = T.sqrt(((self.z - ref)**2).sum(1)).dimshuffle(0,'x')
+
+            neglogdet -= T.log(abs(
+                (1.0 + beta * h(alpha, r)) ** (self.n_state - 1)
+                * (1.0 + beta * h(alpha, r) + beta * dh(alpha, r) * r)
+            ))
+
+            deltaz = T.Rebroadcast((1,True))(beta * h(alpha,r)) * (self.z - ref)
+            self.z = (self.z + deltaz)
+
+        if self.z_0.ndim == 3:
+            self.z = recover_time(self.z, self.z_0.shape[0])
+
+        super(RadialNormalizingFlow, self).__init__(initial_dist,
+                    T.Rebroadcast((1, True))(neglogdet), rng)
 
     def sample(self, epsilon=None):
         # TODO: handle new sampling without using only samples from init

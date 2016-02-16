@@ -19,9 +19,10 @@ def normflow_gauss_kl(p, q):
     # since kl is coord wise and taking the sum later on
     # would multiply it with z.shape[1]
     if p.z.ndim == 3:
-        kl += wild_reshape(p.logdet, (p.z.shape[0], -1)).dimshuffle(0, 1, 'x') / p.z.shape[2]
+        kl += wild_reshape(p.neglogdet, (p.z.shape[0], -1)).dimshuffle(0, 1,
+                                                                     'x') / p.z.shape[2]
     else:
-        kl += p.logdet.dimshuffle(0, 'x') / p.z.shape[1]
+        kl += p.neglogdet.dimshuffle(0, 'x') / p.z.shape[1]
     return kl
 
 
