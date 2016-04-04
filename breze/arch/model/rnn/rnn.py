@@ -90,7 +90,7 @@ def leaky_integration(inpt, coefficients):
 def exprs(inpt, in_to_hidden, hidden_to_hiddens, hidden_to_out,
           hidden_biases, initial_hiddens, recurrents, out_bias,
           hidden_transfers, out_transfer, pooling=None, leaky_coeffs=None,
-          in_to_out=None, skip_to_outs=None):
+          in_to_out=None, skip_to_outs=None, prefix=''):
     exprs = {}
 
     f_hiddens = [lookup(i, transfer) for i in hidden_transfers]
@@ -99,10 +99,10 @@ def exprs(inpt, in_to_hidden, hidden_to_hiddens, hidden_to_out,
     hidden_in = feedforward_layer(inpt, in_to_hidden, hidden_biases[0])
     hidden_in_rec, hidden_rec = recurrent_layer(
         hidden_in, recurrents[0], f_hiddens[0], initial_hiddens[0])
-    exprs['hidden_in_0'] = hidden_in_rec
+    exprs['%shidden_in_0' % prefix] = hidden_in_rec
     if leaky_coeffs is not None:
         hidden_rec = leaky_integration(hidden_rec, leaky_coeffs[0])
-    exprs['hidden_0'] = hidden_rec
+    exprs['%shidden_0' % prefix] = hidden_rec
 
     zipped = zip(hidden_to_hiddens, hidden_biases[1:], recurrents[1:],
                  f_hiddens[1:], initial_hiddens[1:])
@@ -113,8 +113,8 @@ def exprs(inpt, in_to_hidden, hidden_to_hiddens, hidden_to_out,
         hidden_in_rec, hidden_rec = recurrent_layer(hidden_in, r, t, j)
         if leaky_coeffs is not None:
             hidden_rec = leaky_integration(hidden_rec, leaky_coeffs[i])
-        exprs['hidden_in_%i' % (i + 1)] = hidden_in_rec
-        exprs['hidden_%i' % (i + 1)] = hidden_rec
+        exprs['%shidden_in_%i' % (prefix, i + 1)] = hidden_in_rec
+        exprs['%shidden_%i' % (prefix, i + 1)] = hidden_rec
 
     unpooled = feedforward_layer(hidden_rec, hidden_to_out, out_bias)
 
@@ -124,7 +124,7 @@ def exprs(inpt, in_to_hidden, hidden_to_hiddens, hidden_to_out,
     if skip_to_outs is not None:
         for i, s in enumerate(skip_to_outs):
             unpooled += feedforward_layer(
-                exprs['hidden_%i' % i], s, T.zeros_like(out_bias))
+                exprs['%shidden_%i' % (prefix, i)], s, T.zeros_like(out_bias))
 
     if pooling is None:
         output_in = unpooled
@@ -134,10 +134,10 @@ def exprs(inpt, in_to_hidden, hidden_to_hiddens, hidden_to_out,
     output = f_output(output_in)
 
     exprs.update(
-        {'inpt': inpt,
-         'unpooled': unpooled,
-         'output_in': output_in,
-         'output': output,
+        {'%sinpt' % prefix: inpt,
+         '%sunpooled' % prefix: unpooled,
+         '%soutput_in' % prefix: output_in,
+         '%soutput' % prefix: output,
          })
 
     return exprs
