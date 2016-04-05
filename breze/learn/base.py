@@ -410,8 +410,6 @@ class UnsupervisedBrezeWrapperBase(BrezeWrapperBase):
         givens = {} if givens is None else givens
 
         args = ['inpt'] if not imp_weight else ['inpt', 'imp_weight']
-        print args
-
         f_loss = self.function(args, 'loss', explicit_pars=True, mode=mode,
                                givens=givens, on_unused_input=on_unused_input)
         f_d_loss = self.function(

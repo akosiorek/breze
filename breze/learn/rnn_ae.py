@@ -11,8 +11,9 @@ from breze.arch.component.common import supervised_loss
 
 class RnnAE(Model, UnsupervisedBrezeWrapperBase):
 
-    def __init__(self, n_inpt, n_hiddens, n_code, hidden_transfers,
-                 code_transfer='identity',
+    def __init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
+                 hidden_recog_transfers, hidden_gen_transfers,
+                 latent_transfer='identity',
                  out_transfer='identity',
                  loss='squared',
                  batch_size=None,
@@ -22,10 +23,12 @@ class RnnAE(Model, UnsupervisedBrezeWrapperBase):
                  verbose=False):
 
         self.n_inpt = n_inpt
-        self.n_hiddens = n_hiddens
-        self.n_code = n_code
-        self.hidden_transfers = hidden_transfers
-        self.code_transfer = code_transfer
+        self.n_hiddens_recog = n_hiddens_recog
+        self.n_latent = n_latent
+        self.n_hiddens_gen = n_hiddens_gen
+        self.hidden_recog_transfers = hidden_recog_transfers
+        self.latent_transfer = latent_transfer
+        self.hidden_gen_transfers = hidden_gen_transfers
         self.out_transfer = out_transfer
         self.loss = loss
         self.batch_size = batch_size
@@ -37,14 +40,9 @@ class RnnAE(Model, UnsupervisedBrezeWrapperBase):
         super(RnnAE, self).__init__()
 
     def _init_pars(self):
-        spec_encode = rnn.parameters(self.n_inpt, self.n_hiddens, self.n_code, prefix='encode_')
-        spec_decode = rnn.parameters(self.n_code, list(reversed(self.n_hiddens)), self.n_inpt, prefix='decode_')
-        spec = {}
-        spec.update(spec_encode)
-        spec.update(spec_decode)
-
-        print 'spec:'
-        print spec.keys()
+        spec = rnn.parameters(self.n_inpt, self.n_hiddens_recog, self.n_latent, prefix='encode_')
+        spec.update(rnn.parameters(
+            self.n_latent, self.n_hiddens_gen, self.n_inpt, prefix='decode_'))
 
         self.parameters = ParameterSet(**spec)
         self.parameters.data[:] = np.random.standard_normal(
@@ -54,7 +52,7 @@ class RnnAE(Model, UnsupervisedBrezeWrapperBase):
         self.exprs = {'inpt': T.tensor3('inpt')}
         P = self.parameters
         
-        n_layers = len(self.n_hiddens)
+        n_layers = len(self.n_hiddens_recog)
         hidden_to_hiddens = [getattr(P, 'encode_hidden_to_hidden_%i' % i)
                              for i in range(n_layers - 1)]
         recurrents = [getattr(P, 'encode_recurrent_%i' % i)
@@ -63,18 +61,11 @@ class RnnAE(Model, UnsupervisedBrezeWrapperBase):
                            for i in range(n_layers)]
         hidden_biases = [getattr(P, 'encode_hidden_bias_%i' % i)
                          for i in range(n_layers)]
-
-        print 'encode'
-        print 'hidden_to_hiddens: ', hidden_to_hiddens
-        print 'recurrents: ', recurrents
-        print 'initial_hiddens: ', initial_hiddens
-        print 'hidden_biases: ', hidden_biases
-        print
         
         self.exprs.update(rnn.exprs(
             self.exprs['inpt'], P.encode_in_to_hidden, hidden_to_hiddens,
             P.encode_hidden_to_out, hidden_biases, initial_hiddens,
-            recurrents, P.encode_out_bias, self.hidden_transfers, self.code_transfer, prefix='encode_'))
+            recurrents, P.encode_out_bias, self.hidden_recog_transfers, self.latent_transfer, prefix='encode_'))
 
         hidden_to_hiddens = [getattr(P, 'decode_hidden_to_hidden_%i' % i)
                              for i in range(n_layers - 1)]
@@ -85,25 +76,14 @@ class RnnAE(Model, UnsupervisedBrezeWrapperBase):
         hidden_biases = [getattr(P, 'decode_hidden_bias_%i' % i)
                          for i in range(n_layers)]
 
-        print 'decode'
-        print 'hidden_to_hiddens: ', hidden_to_hiddens
-        print 'recurrents: ', recurrents
-        print 'initial_hiddens: ', initial_hiddens
-        print 'hidden_biases: ', hidden_biases
-        print
-
         self.exprs.update(rnn.exprs(
             self.exprs['encode_output'], P.decode_in_to_hidden, hidden_to_hiddens,
             P.decode_hidden_to_out, hidden_biases, initial_hiddens,
-            recurrents, P.decode_out_bias, self.hidden_transfers, self.out_transfer, prefix='decode_'))
+            recurrents, P.decode_out_bias, self.hidden_gen_transfers, self.out_transfer, prefix='decode_'))
 
         # supervised stuff
         if self.imp_weight:
             self.exprs['imp_weight'] = T.tensor3('imp_weight')
-
-        print 'all expres: '
-        print self.exprs.keys()
-        print
 
         imp_weight = False if not self.imp_weight else self.exprs['imp_weight']
         self.exprs.update(supervised_loss(
@@ -125,7 +105,6 @@ class RnnAE(Model, UnsupervisedBrezeWrapperBase):
         if imp_weight:
             args += ['imp_weight']
 
-        print 'imp_weight=', imp_weight, 'args: ', args
         f_loss = self.function(args, 'loss', explicit_pars=True, mode=mode)
         f_d_loss = self.function(args, d_loss, explicit_pars=True, mode=mode)
         return f_loss, f_d_loss
