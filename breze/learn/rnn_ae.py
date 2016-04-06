@@ -61,11 +61,13 @@ class RnnAE(Model, UnsupervisedBrezeWrapperBase):
                            for i in range(n_layers)]
         hidden_biases = [getattr(P, 'encode_hidden_bias_%i' % i)
                          for i in range(n_layers)]
-        
-        self.exprs.update(rnn.exprs(
+
+        exprs = rnn.exprs(
             self.exprs['inpt'], P.encode_in_to_hidden, hidden_to_hiddens,
             P.encode_hidden_to_out, hidden_biases, initial_hiddens,
-            recurrents, P.encode_out_bias, self.hidden_recog_transfers, self.latent_transfer, prefix='encode_'))
+            recurrents, P.encode_out_bias, self.hidden_recog_transfers, self.latent_transfer)
+
+        self.exprs.update({'encode_{0}'.format(k): v for k, v in exprs.iteritems()})
 
         hidden_to_hiddens = [getattr(P, 'decode_hidden_to_hidden_%i' % i)
                              for i in range(n_layers - 1)]
@@ -76,10 +78,11 @@ class RnnAE(Model, UnsupervisedBrezeWrapperBase):
         hidden_biases = [getattr(P, 'decode_hidden_bias_%i' % i)
                          for i in range(n_layers)]
 
-        self.exprs.update(rnn.exprs(
+        exprs = rnn.exprs(
             self.exprs['encode_output'], P.decode_in_to_hidden, hidden_to_hiddens,
             P.decode_hidden_to_out, hidden_biases, initial_hiddens,
-            recurrents, P.decode_out_bias, self.hidden_gen_transfers, self.out_transfer, prefix='decode_'))
+            recurrents, P.decode_out_bias, self.hidden_gen_transfers, self.out_transfer)
+        self.exprs.update({'decode_{0}'.format(k): v for k, v in exprs.iteritems()})
 
         # supervised stuff
         if self.imp_weight:
