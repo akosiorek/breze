@@ -3,11 +3,13 @@ import theano
 from theano import tensor as T
 
 from breze.learn.rnn import BaseRnn
-from breze.arch.util import ParameterSet, Model
+from breze.arch.util import ParameterSet, Model, get_named_variables
 from breze.arch.model.rnn import rnn, lstm
 from breze.learn.base import UnsupervisedBrezeWrapperBase
 from breze.arch.component.common import supervised_loss
 from breze.arch.component.misc import project_into_l2_ball
+from breze.arch.component import corrupt
+
 
 class RnnAE(Model, UnsupervisedBrezeWrapperBase):
 
@@ -41,10 +43,14 @@ class RnnAE(Model, UnsupervisedBrezeWrapperBase):
 
         super(RnnAE, self).__init__()
 
-    def _init_pars(self):
+    def _make_spec(self):
         spec = rnn.parameters(self.n_inpt, self.n_hiddens_recog, self.n_latent, prefix='encode_')
         spec.update(rnn.parameters(
             self.n_latent, self.n_hiddens_gen, self.n_inpt, prefix='decode_'))
+        return spec
+
+    def _init_pars(self):
+        spec = self._make_spec()
 
         self.parameters = ParameterSet(**spec)
         self.parameters.data[:] = np.random.standard_normal(
@@ -95,6 +101,7 @@ class RnnAE(Model, UnsupervisedBrezeWrapperBase):
             self.exprs['inpt'], self.exprs['decode_output'], self.loss, 2,
             imp_weight=imp_weight))
 
+
     def _make_loss_functions(self, mode=None, imp_weight=False):
         """Return pair `f_loss, f_d_loss` of functions.
 
@@ -113,6 +120,59 @@ class RnnAE(Model, UnsupervisedBrezeWrapperBase):
         f_loss = self.function(args, 'loss', explicit_pars=True, mode=mode)
         f_d_loss = self.function(args, d_loss, explicit_pars=True, mode=mode)
         return f_loss, f_d_loss
+    
+
+class DenoisingRnnAE(RnnAE):
+
+    def __init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
+                 hidden_recog_transfers, hidden_gen_transfers,
+                 latent_transfer='identity',
+                 out_transfer='identity',
+                 loss='squared',
+                 batch_size=None,
+                 optimizer='rprop',
+                 imp_weight=False,
+                 max_iter=1000,
+                 gradient_clip=False,
+                 verbose=False,
+                 noise_type='gauss', c_noise=.2):
+
+        self.noise_type = noise_type
+        self.c_noise = c_noise
+
+        super(DenoisingRnnAE, self).__init__(n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
+                                    hidden_recog_transfers, hidden_gen_transfers,
+                                    latent_transfer,
+                                    out_transfer,
+                                    loss,
+                                    batch_size,
+                                    optimizer,
+                                    imp_weight,
+                                    max_iter,
+                                    gradient_clip,
+                                    verbose)
+
+    def _init_exprs(self):
+
+        super(DenoisingRnnAE, self)._init_exprs()
+        if self.noise_type == 'gauss':
+            corrupted_inpt = corrupt.gaussian_perturb(
+                self.exprs['inpt'], self.c_noise)
+        elif self.noise_type == 'mask':
+            corrupted_inpt = corrupt.mask(
+                self.exprs['inpt'], self.c_noise)
+
+        output_from_corrupt = theano.clone(
+            self.exprs['encode_output'],
+            {self.exprs['inpt']: corrupted_inpt}
+        )
+
+        score = self.exprs['loss']
+        loss = theano.clone(
+            self.exprs['loss'],
+            {self.exprs['encode_output']: output_from_corrupt})
+
+        self.exprs.update(get_named_variables(locals(), overwrite=True))
 
 
 class LstmAE(Model, UnsupervisedBrezeWrapperBase):
@@ -233,3 +293,51 @@ class LstmAE(Model, UnsupervisedBrezeWrapperBase):
         f_loss = self.function(args, 'loss', explicit_pars=True, mode=mode)
         f_d_loss = self.function(args, d_loss, explicit_pars=True, mode=mode)
         return f_loss, f_d_loss
+
+
+class LadderRnn(DenoisingRnnAE):
+    def __init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
+                 hidden_recog_transfers, hidden_gen_transfers,
+                 latent_transfer='identity',
+                 out_transfer='identity',
+                 loss='squared',
+                 batch_size=None,
+                 optimizer='rprop',
+                 imp_weight=False,
+                 max_iter=1000,
+                 gradient_clip=False,
+                 verbose=False,
+                 noise_type='gauss', c_noise=.2):
+
+        super(LadderRnn, self).__init__(n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
+                                        hidden_recog_transfers, hidden_gen_transfers,
+                                        latent_transfer,
+                                        out_transfer,
+                                        loss,
+                                        batch_size,
+                                        optimizer,
+                                        imp_weight,
+                                        max_iter,
+                                        gradient_clip,
+                                        verbose,
+                                        noise_type,
+                                        c_noise)
+
+    def _init_pars(self):
+        spec = self._make_spec()
+        spec.update(rnn.parameters(
+            self.n_latent, self.n_hiddens_pred, self.n_inpt, prefix='predict_'))
+
+        self.parameters = ParameterSet(**spec)
+        self.parameters.data[:] = np.random.standard_normal(
+            self.parameters.data.shape).astype(theano.config.floatX)
+
+   def _init_exprs(self):
+        super(LadderRnn, self)._init_exprs()
+
+        # TODO: figure out how to add loss with next timestep's input as target
+        # TODO: enable imp weights; there might be diferent ones for input and output(?)
+        reconstruction_loss = self.expr['loss']
+        prediction_loss = supervised_loss(
+            self.exprs['target'], self.exprs['predict_output'], self.loss, 2,
+            imp_weight=False)
