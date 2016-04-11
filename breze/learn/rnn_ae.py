@@ -7,7 +7,7 @@ from breze.arch.util import ParameterSet, Model
 from breze.arch.model.rnn import rnn, lstm
 from breze.learn.base import UnsupervisedBrezeWrapperBase
 from breze.arch.component.common import supervised_loss
-
+from breze.arch.component.misc import project_into_l2_ball
 
 class RnnAE(Model, UnsupervisedBrezeWrapperBase):
 
@@ -20,6 +20,7 @@ class RnnAE(Model, UnsupervisedBrezeWrapperBase):
                  optimizer='rprop',
                  imp_weight=False,
                  max_iter=1000,
+                 gradient_clip=False,
                  verbose=False):
 
         self.n_inpt = n_inpt
@@ -35,6 +36,7 @@ class RnnAE(Model, UnsupervisedBrezeWrapperBase):
         self.optimizer = optimizer
         self.imp_weight = imp_weight
         self.max_iter = max_iter
+        self.gradient_clip = gradient_clip
         self.verbose = verbose
 
         super(RnnAE, self).__init__()
@@ -101,8 +103,8 @@ class RnnAE(Model, UnsupervisedBrezeWrapperBase):
            matrix of the loss.
         """
         d_loss = self._d_loss()
-        # if self.gradient_clip:
-        #     d_loss = project_into_l2_ball(d_loss, self.gradient_clip)
+        if self.gradient_clip:
+            d_loss = project_into_l2_ball(d_loss, self.gradient_clip)
 
         args = list(self.data_arguments)
         if imp_weight:
@@ -124,6 +126,7 @@ class LstmAE(Model, UnsupervisedBrezeWrapperBase):
                  optimizer='rprop',
                  imp_weight=False,
                  max_iter=1000,
+                 gradient_clip=None,
                  verbose=False):
 
         self.n_inpt = n_inpt
@@ -139,6 +142,7 @@ class LstmAE(Model, UnsupervisedBrezeWrapperBase):
         self.optimizer = optimizer
         self.imp_weight = imp_weight
         self.max_iter = max_iter
+        self.gradient_clip = gradient_clip
         self.verbose = verbose
 
         super(LstmAE, self).__init__()
@@ -219,8 +223,8 @@ class LstmAE(Model, UnsupervisedBrezeWrapperBase):
            matrix of the loss.
         """
         d_loss = self._d_loss()
-        # if self.gradient_clip:
-        #     d_loss = project_into_l2_ball(d_loss, self.gradient_clip)
+        if self.gradient_clip:
+            d_loss = project_into_l2_ball(d_loss, self.gradient_clip)
 
         args = list(self.data_arguments)
         if imp_weight:
