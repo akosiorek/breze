@@ -102,26 +102,6 @@ class RnnAE(Model, UnsupervisedBrezeWrapperBase):
             imp_weight=imp_weight))
 
 
-    def _make_loss_functions(self, mode=None, imp_weight=False):
-        """Return pair `f_loss, f_d_loss` of functions.
-
-         - f_loss returns the current loss,
-         - f_d_loss returns the gradient of that loss wrt parameters,
-           matrix of the loss.
-        """
-        d_loss = self._d_loss()
-        if self.gradient_clip:
-            d_loss = project_into_l2_ball(d_loss, self.gradient_clip)
-
-        args = list(self.data_arguments)
-        if imp_weight:
-            args += ['imp_weight']
-
-        f_loss = self.function(args, 'loss', explicit_pars=True, mode=mode)
-        f_d_loss = self.function(args, d_loss, explicit_pars=True, mode=mode)
-        return f_loss, f_d_loss
-    
-
 class DenoisingRnnAE(RnnAE):
 
     def __init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
@@ -275,25 +255,6 @@ class LstmAE(Model, UnsupervisedBrezeWrapperBase):
             self.exprs['inpt'], self.exprs['decode_output'], self.loss, 2,
             imp_weight=imp_weight))
 
-    def _make_loss_functions(self, mode=None, imp_weight=False):
-        """Return pair `f_loss, f_d_loss` of functions.
-
-         - f_loss returns the current loss,
-         - f_d_loss returns the gradient of that loss wrt parameters,
-           matrix of the loss.
-        """
-        d_loss = self._d_loss()
-        if self.gradient_clip:
-            d_loss = project_into_l2_ball(d_loss, self.gradient_clip)
-
-        args = list(self.data_arguments)
-        if imp_weight:
-            args += ['imp_weight']
-
-        f_loss = self.function(args, 'loss', explicit_pars=True, mode=mode)
-        f_d_loss = self.function(args, d_loss, explicit_pars=True, mode=mode)
-        return f_loss, f_d_loss
-
 
 class LadderRnn(DenoisingRnnAE):
     def __init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
@@ -332,7 +293,7 @@ class LadderRnn(DenoisingRnnAE):
         self.parameters.data[:] = np.random.standard_normal(
             self.parameters.data.shape).astype(theano.config.floatX)
 
-   def _init_exprs(self):
+    def _init_exprs(self):
         super(LadderRnn, self)._init_exprs()
 
         # TODO: figure out how to add loss with next timestep's input as target
