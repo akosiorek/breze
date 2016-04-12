@@ -5,13 +5,13 @@ from theano import tensor as T
 from breze.learn.rnn import BaseRnn
 from breze.arch.util import ParameterSet, Model, get_named_variables
 from breze.arch.model.rnn import rnn, lstm
-from breze.learn.base import UnsupervisedBrezeWrapperBase
+from breze.learn.base import SupervisedBrezeWrapperBase, UnsupervisedBrezeWrapperBase
 from breze.arch.component.common import supervised_loss
 from breze.arch.component.misc import project_into_l2_ball
 from breze.arch.component import corrupt
 
 
-class RnnAE(Model, UnsupervisedBrezeWrapperBase):
+class GenericRnnAE(Model):
 
     def __init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
                  hidden_recog_transfers, hidden_gen_transfers,
@@ -41,7 +41,7 @@ class RnnAE(Model, UnsupervisedBrezeWrapperBase):
         self.gradient_clip = gradient_clip
         self.verbose = verbose
 
-        super(RnnAE, self).__init__()
+        super(GenericRnnAE, self).__init__()
 
     def _make_spec(self):
         spec = rnn.parameters(self.n_inpt, self.n_hiddens_recog, self.n_latent, prefix='encode_')
@@ -102,39 +102,14 @@ class RnnAE(Model, UnsupervisedBrezeWrapperBase):
             imp_weight=imp_weight))
 
 
-class DenoisingRnnAE(RnnAE):
+class DenoisingRnnAEMixin(object):
 
-    def __init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
-                 hidden_recog_transfers, hidden_gen_transfers,
-                 latent_transfer='identity',
-                 out_transfer='identity',
-                 loss='squared',
-                 batch_size=None,
-                 optimizer='rprop',
-                 imp_weight=False,
-                 max_iter=1000,
-                 gradient_clip=False,
-                 verbose=False,
-                 noise_type='gauss', c_noise=.2):
-
+    def __init__(self, noise_type, c_noise):
         self.noise_type = noise_type
         self.c_noise = c_noise
 
-        super(DenoisingRnnAE, self).__init__(n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
-                                    hidden_recog_transfers, hidden_gen_transfers,
-                                    latent_transfer,
-                                    out_transfer,
-                                    loss,
-                                    batch_size,
-                                    optimizer,
-                                    imp_weight,
-                                    max_iter,
-                                    gradient_clip,
-                                    verbose)
-
     def _init_exprs(self):
 
-        super(DenoisingRnnAE, self)._init_exprs()
         if self.noise_type == 'gauss':
             corrupted_inpt = corrupt.gaussian_perturb(
                 self.exprs['inpt'], self.c_noise)
@@ -155,8 +130,11 @@ class DenoisingRnnAE(RnnAE):
         self.exprs.update(get_named_variables(locals(), overwrite=True))
 
 
-class LstmAE(Model, UnsupervisedBrezeWrapperBase):
+class RnnAE(GenericRnnAE, UnsupervisedBrezeWrapperBase):
+    pass
 
+
+class DenoisingRnnAE(RnnAE, DenoisingRnnAEMixin):
     def __init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
                  hidden_recog_transfers, hidden_gen_transfers,
                  latent_transfer='identity',
@@ -166,26 +144,29 @@ class LstmAE(Model, UnsupervisedBrezeWrapperBase):
                  optimizer='rprop',
                  imp_weight=False,
                  max_iter=1000,
-                 gradient_clip=None,
-                 verbose=False):
+                 gradient_clip=False,
+                 verbose=False,
+                 noise_type='gauss', c_noise=.2):
 
-        self.n_inpt = n_inpt
-        self.n_hiddens_recog = n_hiddens_recog
-        self.n_latent = n_latent
-        self.n_hiddens_gen = n_hiddens_gen
-        self.hidden_recog_transfers = hidden_recog_transfers
-        self.latent_transfer = latent_transfer
-        self.hidden_gen_transfers = hidden_gen_transfers
-        self.out_transfer = out_transfer
-        self.loss = loss
-        self.batch_size = batch_size
-        self.optimizer = optimizer
-        self.imp_weight = imp_weight
-        self.max_iter = max_iter
-        self.gradient_clip = gradient_clip
-        self.verbose = verbose
+        DenoisingRnnAEMixin.__init__(self, noise_type, c_noise)
+        RnnAE.__init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
+                       hidden_recog_transfers, hidden_gen_transfers,
+                       latent_transfer,
+                       out_transfer,
+                       loss,
+                       batch_size,
+                       optimizer,
+                       imp_weight,
+                       max_iter,
+                       gradient_clip,
+                       verbose)
 
-        super(LstmAE, self).__init__()
+    def _init_exprs(self):
+        RnnAE._init_exprs(self)
+        DenoisingRnnAEMixin._init_exprs(self)
+
+
+class LstmAE(Model, UnsupervisedBrezeWrapperBase):
 
     def _init_pars(self):
         spec_encode = lstm.parameters(self.n_inpt, self.n_hiddens_recog, self.n_latent)
@@ -256,7 +237,7 @@ class LstmAE(Model, UnsupervisedBrezeWrapperBase):
             imp_weight=imp_weight))
 
 
-class LadderRnn(DenoisingRnnAE):
+class LadderRnn(GenericRnnAE, DenoisingRnnAEMixin, SupervisedBrezeWrapperBase):
     def __init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
                  hidden_recog_transfers, hidden_gen_transfers,
                  latent_transfer='identity',
