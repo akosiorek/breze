@@ -2,16 +2,17 @@ import numpy as np
 import theano
 from theano import tensor as T
 
-from breze.learn.rnn import BaseRnn
 from breze.arch.util import ParameterSet, Model, get_named_variables
 from breze.arch.model.rnn import rnn, lstm
 from breze.learn.base import SupervisedBrezeWrapperBase, UnsupervisedBrezeWrapperBase
 from breze.arch.component.common import supervised_loss
-from breze.arch.component.misc import project_into_l2_ball
 from breze.arch.component import corrupt
 
 
 class GenericRnnAE(Model):
+
+    encode_name = 'recog'
+    decode_name = 'gen'
 
     def __init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
                  hidden_recog_transfers, hidden_gen_transfers,
@@ -44,10 +45,39 @@ class GenericRnnAE(Model):
         super(GenericRnnAE, self).__init__()
 
     def _make_spec(self):
-        spec = rnn.parameters(self.n_inpt, self.n_hiddens_recog, self.n_latent, prefix='encode_')
+        spec = rnn.parameters(self.n_inpt, self.n_hiddens_recog, self.n_latent, prefix=self.encode_name + '_')
         spec.update(rnn.parameters(
-            self.n_latent, self.n_hiddens_gen, self.n_inpt, prefix='decode_'))
+            self.n_latent, self.n_hiddens_gen, self.n_inpt, prefix=self.decode_name + '_')
+        )
         return spec
+
+    def _make_exprs(self, name, inpt_expr_name, out_transfer):
+
+        p = self.parameters
+        n_layers = len(getattr(self, 'n_hiddens_{}'.format(name)))
+        inpt_expr = self.exprs[inpt_expr_name]
+
+        hidden_to_hiddens = [getattr(p, '{}_hidden_to_hidden_{}'.format(name, i))
+                             for i in range(n_layers - 1)]
+        recurrents = [getattr(p, '{}_recurrent_{}'.format(name, i))
+                      for i in range(n_layers)]
+        initial_hiddens = [getattr(p, '{}_initial_hiddens_{}'.format(name, i))
+                           for i in range(n_layers)]
+        hidden_biases = [getattr(p, '{}_hidden_bias_{}'.format(name, i))
+                         for i in range(n_layers)]
+
+        in_to_hidden = getattr(p, '{}_in_to_hidden'.format(name))
+        hidden_to_out = getattr(p, '{}_hidden_to_out'.format(name))
+        out_bias = getattr(p, '{}_out_bias'.format(name))
+
+        hidden_transfers = getattr(self, 'hidden_{}_transfers'.format(name))
+
+        exprs = rnn.exprs(
+            inpt_expr, in_to_hidden, hidden_to_hiddens,
+            hidden_to_out, hidden_biases, initial_hiddens,
+            recurrents, out_bias, hidden_transfers, out_transfer)
+
+        return {'{}_{}'.format(name, k): v for k, v in exprs.iteritems()}
 
     def _init_pars(self):
         spec = self._make_spec()
@@ -58,51 +88,21 @@ class GenericRnnAE(Model):
 
     def _init_exprs(self):
         self.exprs = {'inpt': T.tensor3('inpt')}
-        P = self.parameters
-        
-        n_layers = len(self.n_hiddens_recog)
-        hidden_to_hiddens = [getattr(P, 'encode_hidden_to_hidden_%i' % i)
-                             for i in range(n_layers - 1)]
-        recurrents = [getattr(P, 'encode_recurrent_%i' % i)
-                      for i in range(n_layers)]
-        initial_hiddens = [getattr(P, 'encode_initial_hiddens_%i' % i)
-                           for i in range(n_layers)]
-        hidden_biases = [getattr(P, 'encode_hidden_bias_%i' % i)
-                         for i in range(n_layers)]
 
-        exprs = rnn.exprs(
-            self.exprs['inpt'], P.encode_in_to_hidden, hidden_to_hiddens,
-            P.encode_hidden_to_out, hidden_biases, initial_hiddens,
-            recurrents, P.encode_out_bias, self.hidden_recog_transfers, self.latent_transfer)
+        self.exprs.update(self._make_exprs(self.encode_name, 'inpt', self.latent_transfer))
+        self.exprs.update(self._make_exprs(self.decode_name, self.encode_name + '_output', self.out_transfer))
 
-        self.exprs.update({'encode_{0}'.format(k): v for k, v in exprs.iteritems()})
-
-        hidden_to_hiddens = [getattr(P, 'decode_hidden_to_hidden_%i' % i)
-                             for i in range(n_layers - 1)]
-        recurrents = [getattr(P, 'decode_recurrent_%i' % i)
-                      for i in range(n_layers)]
-        initial_hiddens = [getattr(P, 'decode_initial_hiddens_%i' % i)
-                           for i in range(n_layers)]
-        hidden_biases = [getattr(P, 'decode_hidden_bias_%i' % i)
-                         for i in range(n_layers)]
-
-        exprs = rnn.exprs(
-            self.exprs['encode_output'], P.decode_in_to_hidden, hidden_to_hiddens,
-            P.decode_hidden_to_out, hidden_biases, initial_hiddens,
-            recurrents, P.decode_out_bias, self.hidden_gen_transfers, self.out_transfer)
-        self.exprs.update({'decode_{0}'.format(k): v for k, v in exprs.iteritems()})
-
-        # supervised stuff
+        # loss exprs
         if self.imp_weight:
             self.exprs['imp_weight'] = T.tensor3('imp_weight')
 
         imp_weight = False if not self.imp_weight else self.exprs['imp_weight']
         self.exprs.update(supervised_loss(
-            self.exprs['inpt'], self.exprs['decode_output'], self.loss, 2,
+            self.exprs['inpt'], self.exprs[self.decode_name + '_output'], self.loss, 2,
             imp_weight=imp_weight))
 
 
-class DenoisingRnnAEMixin(object):
+class DenoisingMixin(object):
 
     def __init__(self, noise_type, c_noise):
         self.noise_type = noise_type
@@ -116,25 +116,25 @@ class DenoisingRnnAEMixin(object):
         elif self.noise_type == 'mask':
             corrupted_inpt = corrupt.mask(
                 self.exprs['inpt'], self.c_noise)
-
+                
+        corrupted_output_name = GenericRnnAE.encode_name + '_output'
         output_from_corrupt = theano.clone(
-            self.exprs['encode_output'],
+            self.exprs[corrupted_output_name],
             {self.exprs['inpt']: corrupted_inpt}
         )
 
         score = self.exprs['loss']
         loss = theano.clone(
             self.exprs['loss'],
-            {self.exprs['encode_output']: output_from_corrupt})
+            {self.exprs[corrupted_output_name]: output_from_corrupt})
 
         self.exprs.update(get_named_variables(locals(), overwrite=True))
 
 
-class RnnAE(GenericRnnAE, UnsupervisedBrezeWrapperBase):
-    pass
+class RnnAE(GenericRnnAE, UnsupervisedBrezeWrapperBase): pass
 
 
-class DenoisingRnnAE(RnnAE, DenoisingRnnAEMixin):
+class DenoisingRnnAE(RnnAE, DenoisingMixin):
     def __init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
                  hidden_recog_transfers, hidden_gen_transfers,
                  latent_transfer='identity',
@@ -148,7 +148,7 @@ class DenoisingRnnAE(RnnAE, DenoisingRnnAEMixin):
                  verbose=False,
                  noise_type='gauss', c_noise=.2):
 
-        DenoisingRnnAEMixin.__init__(self, noise_type, c_noise)
+        DenoisingMixin.__init__(self, noise_type, c_noise)
         RnnAE.__init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
                        hidden_recog_transfers, hidden_gen_transfers,
                        latent_transfer,
@@ -163,7 +163,7 @@ class DenoisingRnnAE(RnnAE, DenoisingRnnAEMixin):
 
     def _init_exprs(self):
         RnnAE._init_exprs(self)
-        DenoisingRnnAEMixin._init_exprs(self)
+        DenoisingMixin._init_exprs(self)
 
 
 class LstmAE(Model, UnsupervisedBrezeWrapperBase):
@@ -237,10 +237,13 @@ class LstmAE(Model, UnsupervisedBrezeWrapperBase):
             imp_weight=imp_weight))
 
 
-class LadderRnn(GenericRnnAE, DenoisingRnnAEMixin, SupervisedBrezeWrapperBase):
+class LadderRnn(GenericRnnAE, DenoisingMixin, SupervisedBrezeWrapperBase):
+
+    predict_name = 'pred'
+  
     def __init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
-                 hidden_recog_transfers, hidden_gen_transfers,
-                 latent_transfer='identity',
+                 n_hiddens_pred, hidden_recog_transfers, hidden_gen_transfers,
+                 hidden_pred_transfers, latent_transfer='identity',
                  out_transfer='identity',
                  loss='squared',
                  batch_size=None,
@@ -251,7 +254,11 @@ class LadderRnn(GenericRnnAE, DenoisingRnnAEMixin, SupervisedBrezeWrapperBase):
                  verbose=False,
                  noise_type='gauss', c_noise=.2):
 
-        super(LadderRnn, self).__init__(n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
+        self.n_hiddens_pred = n_hiddens_pred
+        self.hidden_pred_transfers = hidden_pred_transfers
+
+        DenoisingMixin.__init__(self, noise_type, c_noise)
+        GenericRnnAE.__init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
                                         hidden_recog_transfers, hidden_gen_transfers,
                                         latent_transfer,
                                         out_transfer,
@@ -261,25 +268,28 @@ class LadderRnn(GenericRnnAE, DenoisingRnnAEMixin, SupervisedBrezeWrapperBase):
                                         imp_weight,
                                         max_iter,
                                         gradient_clip,
-                                        verbose,
-                                        noise_type,
-                                        c_noise)
+                                        verbose)
 
-    def _init_pars(self):
-        spec = self._make_spec()
+    def _make_spec(self):
+        spec = super(LadderRnn, self)._make_spec()
         spec.update(rnn.parameters(
-            self.n_latent, self.n_hiddens_pred, self.n_inpt, prefix='predict_'))
-
-        self.parameters = ParameterSet(**spec)
-        self.parameters.data[:] = np.random.standard_normal(
-            self.parameters.data.shape).astype(theano.config.floatX)
+            self.n_latent, self.n_hiddens_pred, self.n_inpt, prefix=self.predict_name + '_'))
+        return spec
 
     def _init_exprs(self):
-        super(LadderRnn, self)._init_exprs()
+        GenericRnnAE._init_exprs(self)
+        DenoisingMixin._init_exprs(self)
 
+        self.exprs['target'] = T.tensor3('target')
+        
+        input_name = GenericRnnAE.encode_name + '_output'
+        self.exprs.update(self._make_exprs(self.predict_name, input_name, self.out_transfer))
+        
         # TODO: figure out how to add loss with next timestep's input as target
         # TODO: enable imp weights; there might be diferent ones for input and output(?)
-        reconstruction_loss = self.expr['loss']
+        reconstruction_loss = self.exprs['loss']
         prediction_loss = supervised_loss(
-            self.exprs['target'], self.exprs['predict_output'], self.loss, 2,
-            imp_weight=False)
+            self.exprs['target'], self.exprs[self.predict_name + '_output'], self.loss, 2,
+            imp_weight=False)['loss']
+
+        self.exprs['loss'] = reconstruction_loss + prediction_loss
