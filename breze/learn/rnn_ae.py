@@ -13,6 +13,7 @@ class GenericRnnAE(Model):
 
     encode_name = 'recog'
     decode_name = 'gen'
+    sample_dim = 1,
 
     def __init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
                  hidden_recog_transfers, hidden_gen_transfers,
@@ -194,6 +195,7 @@ class DenoisingRnnAE(RnnAE, DenoisingMixin):
 
 class LstmAE(Model, UnsupervisedBrezeWrapperBase):
 
+    sample_dim = 1,
     def _init_pars(self):
         spec_encode = lstm.parameters(self.n_inpt, self.n_hiddens_recog, self.n_latent)
         spec = {'{0}_{1}'.format('encode', k): v for (k, v) in spec_encode.iteritems()}
@@ -266,7 +268,8 @@ class LstmAE(Model, UnsupervisedBrezeWrapperBase):
 class LadderRnn(GenericRnnAE, DenoisingMixin, SupervisedBrezeWrapperBase):
 
     predict_name = 'pred'
-  
+    sample_dim = 1, 1
+
     def __init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
                  n_hiddens_pred, hidden_recog_transfers, hidden_gen_transfers,
                  hidden_pred_transfers, latent_transfer='identity',
