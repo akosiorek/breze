@@ -19,6 +19,7 @@ class GenericRnnAE(Model):
                  latent_transfer='identity',
                  out_transfer='identity',
                  loss='squared',
+                 tied_weights=False,
                  batch_size=None,
                  optimizer='rprop',
                  imp_weight=False,
@@ -35,6 +36,7 @@ class GenericRnnAE(Model):
         self.hidden_gen_transfers = hidden_gen_transfers
         self.out_transfer = out_transfer
         self.loss = loss
+        self.tied_weights = tied_weights
         self.batch_size = batch_size
         self.optimizer = optimizer
         self.imp_weight = imp_weight
@@ -45,18 +47,31 @@ class GenericRnnAE(Model):
         super(GenericRnnAE, self).__init__()
 
     def _make_spec(self):
+
         spec = rnn.parameters(self.n_inpt, self.n_hiddens_recog, self.n_latent, prefix=self.encode_name + '_')
-        spec.update(rnn.parameters(
-            self.n_latent, self.n_hiddens_gen, self.n_inpt, prefix=self.decode_name + '_')
-        )
+        if not self.tied_weights:
+            spec.update(rnn.parameters(
+                self.n_latent, self.n_hiddens_gen, self.n_inpt, prefix=self.decode_name + '_')
+            )
+        else:
+            spec.update({'{}_out_bias'.format(self.decode_name): self.n_inpt})
+
+            assert self.n_hiddens_recog == self.n_hiddens_gen[::-1], 'Layers do not match for tied weights'
+            assert self.hidden_recog_transfers == self.hidden_gen_transfers[::-1]
+
         return spec
 
-    def _make_exprs(self, name, inpt_expr_name, out_transfer):
+    def _make_exprs(self, name, inpt_expr_name, out_transfer, reverse=False):
 
         p = self.parameters
-        n_layers = len(getattr(self, 'n_hiddens_{}'.format(name)))
         inpt_expr = self.exprs[inpt_expr_name]
 
+        true_name = name
+        if reverse:
+            true_name = name
+            name = reverse
+
+        n_layers = len(getattr(self, 'n_hiddens_{}'.format(name)))
         hidden_to_hiddens = [getattr(p, '{}_hidden_to_hidden_{}'.format(name, i))
                              for i in range(n_layers - 1)]
         recurrents = [getattr(p, '{}_recurrent_{}'.format(name, i))
@@ -66,18 +81,25 @@ class GenericRnnAE(Model):
         hidden_biases = [getattr(p, '{}_hidden_bias_{}'.format(name, i))
                          for i in range(n_layers)]
 
+        hidden_transfers = getattr(self, 'hidden_{}_transfers'.format(name))
+
         in_to_hidden = getattr(p, '{}_in_to_hidden'.format(name))
         hidden_to_out = getattr(p, '{}_hidden_to_out'.format(name))
-        out_bias = getattr(p, '{}_out_bias'.format(name))
+        out_bias = getattr(p, '{}_out_bias'.format(true_name))
 
-        hidden_transfers = getattr(self, 'hidden_{}_transfers'.format(name))
+        if reverse:
+            hidden_to_hiddens = [w.T for w in reversed(hidden_to_hiddens)]
+            recurrents, initial_hiddens, hidden_biases, hidden_transfers = [
+                l[::-1] for l in (recurrents, initial_hiddens, hidden_biases, hidden_transfers)]
+
+            in_to_hidden, hidden_to_out = hidden_to_out.T, in_to_hidden.T
 
         exprs = rnn.exprs(
             inpt_expr, in_to_hidden, hidden_to_hiddens,
             hidden_to_out, hidden_biases, initial_hiddens,
             recurrents, out_bias, hidden_transfers, out_transfer)
 
-        return {'{}_{}'.format(name, k): v for k, v in exprs.iteritems()}
+        return {'{}_{}'.format(true_name, k): v for k, v in exprs.iteritems()}
 
     def _init_pars(self):
         spec = self._make_spec()
@@ -89,8 +111,10 @@ class GenericRnnAE(Model):
     def _init_exprs(self):
         self.exprs = {'inpt': T.tensor3('inpt')}
 
+        reverse = self.encode_name if self.tied_weights else False
         self.exprs.update(self._make_exprs(self.encode_name, 'inpt', self.latent_transfer))
-        self.exprs.update(self._make_exprs(self.decode_name, self.encode_name + '_output', self.out_transfer))
+        self.exprs.update(self._make_exprs(
+            self.decode_name, self.encode_name + '_output', self.out_transfer, reverse=reverse))
 
         # loss exprs
         if self.imp_weight:
@@ -117,7 +141,7 @@ class DenoisingMixin(object):
             corrupted_inpt = corrupt.mask(
                 self.exprs['inpt'], self.c_noise)
                 
-        corrupted_output_name = GenericRnnAE.encode_name + '_output'
+        corrupted_output_name = GenericRnnAE.decode_name + '_output'
         output_from_corrupt = theano.clone(
             self.exprs[corrupted_output_name],
             {self.exprs['inpt']: corrupted_inpt}
@@ -140,6 +164,7 @@ class DenoisingRnnAE(RnnAE, DenoisingMixin):
                  latent_transfer='identity',
                  out_transfer='identity',
                  loss='squared',
+                 tied_weights=False,
                  batch_size=None,
                  optimizer='rprop',
                  imp_weight=False,
@@ -154,6 +179,7 @@ class DenoisingRnnAE(RnnAE, DenoisingMixin):
                        latent_transfer,
                        out_transfer,
                        loss,
+                       tied_weights,
                        batch_size,
                        optimizer,
                        imp_weight,
@@ -246,6 +272,7 @@ class LadderRnn(GenericRnnAE, DenoisingMixin, SupervisedBrezeWrapperBase):
                  hidden_pred_transfers, latent_transfer='identity',
                  out_transfer='identity',
                  loss='squared',
+                 tied_weights=False,
                  batch_size=None,
                  optimizer='rprop',
                  imp_weight=False,
@@ -263,6 +290,7 @@ class LadderRnn(GenericRnnAE, DenoisingMixin, SupervisedBrezeWrapperBase):
                                         latent_transfer,
                                         out_transfer,
                                         loss,
+                                        tied_weights,
                                         batch_size,
                                         optimizer,
                                         imp_weight,
