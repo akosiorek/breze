@@ -238,4 +238,4 @@ class StochasticRnn(GenericVariationalAutoEncoder):
             )[-1, :, :self.n_inpt]
             S[prefix_length + i] = p
 
-        return S[prefix_length + 1:]
+        return S[prefix_length:]
