@@ -312,7 +312,7 @@ class LadderRnn(GenericRnnAE, DenoisingMixin, SupervisedBrezeWrapperBase):
         DenoisingMixin._init_exprs(self)
 
         self.exprs['target'] = T.tensor3('target')
-        
+
         input_name = GenericRnnAE.encode_name + '_output'
         self.exprs.update(self._make_exprs(self.predict_name, input_name, self.out_transfer))
         

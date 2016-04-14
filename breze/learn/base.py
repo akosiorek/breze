@@ -388,15 +388,16 @@ class UnsupervisedBrezeWrapperBase(BrezeWrapperBase):
             if i + 1 >= self.max_iter:
                 break
 
-    def _make_args(self, X, W=None):
+    def _make_args(self, X, W=None, n_cycles=False):
         batch_size = getattr(self, 'batch_size', None)
         item = [X] if W is None else [X, W]
         if batch_size is None:
-            data = itertools.repeat(item)
+            times = n_cycles if n_cycles else None
+            data = itertools.repeat(item, times=times)
         elif batch_size < 1:
             raise ValueError('need strictly positive batch size')
         else:
-            data = iter_minibatches(item, self.batch_size, self.sample_dim)
+            data = iter_minibatches(item, self.batch_size, self.sample_dim, n_cycles=n_cycles)
         args = ((i, {}) for i in data)
         return args
 
@@ -442,13 +443,16 @@ class UnsupervisedBrezeWrapperBase(BrezeWrapperBase):
         l : scalar
             Score of the model.
         """
-        X = cast_array_to_local_type(X)
         if self.f_score is None:
             self.f_score = self._make_score_function()
-        args = [X] if W is None else [X, W]
-        l = self.f_score(*args)
 
-        return l
+        score = 0
+        sample_count = 0
+        for arg in self._make_args(X, W, n_cycles=1):
+            samples_in_batch = int(arg[0][0].shape[self.sample_dim[0]])
+            score += self.f_score(*arg[0]) * samples_in_batch
+            sample_count += samples_in_batch
+        return score / sample_count
 
 
 class TransformBrezeWrapperMixin(object):
