@@ -26,7 +26,8 @@ class GenericRnnAE(Model):
                  imp_weight=False,
                  max_iter=1000,
                  gradient_clip=False,
-                 verbose=False):
+                 verbose=False,
+                 skip_to_out=False):
 
         self.n_inpt = n_inpt
         self.n_hiddens_recog = n_hiddens_recog
@@ -44,12 +45,13 @@ class GenericRnnAE(Model):
         self.max_iter = max_iter
         self.gradient_clip = gradient_clip
         self.verbose = verbose
+        self.skip_to_out = skip_to_out
 
         super(GenericRnnAE, self).__init__()
 
     def _make_spec(self):
 
-        spec = rnn.parameters(self.n_inpt, self.n_hiddens_recog, self.n_latent, prefix=self.encode_name + '_')
+        spec = rnn.parameters(self.n_inpt, self.n_hiddens_recog, self.n_latent, self.skip_to_out, prefix=self.encode_name + '_')
         if not self.tied_weights:
             spec.update(rnn.parameters(
                 self.n_latent, self.n_hiddens_gen, self.n_inpt, prefix=self.decode_name + '_')
@@ -88,6 +90,11 @@ class GenericRnnAE(Model):
         hidden_to_out = getattr(p, '{}_hidden_to_out'.format(name))
         out_bias = getattr(p, '{}_out_bias'.format(true_name))
 
+        if self.skip_to_out:
+            in_to_out = getattr(p, '{}_in_to_out'.format(name))
+        else:
+            in_to_out = None
+
         if reverse:
             hidden_to_hiddens = [w.T for w in reversed(hidden_to_hiddens)]
             recurrents, initial_hiddens, hidden_biases, hidden_transfers = [
@@ -95,10 +102,13 @@ class GenericRnnAE(Model):
 
             in_to_hidden, hidden_to_out = hidden_to_out.T, in_to_hidden.T
 
+            if in_to_out is not None:
+                in_to_out = in_to_out.T
+
         exprs = rnn.exprs(
             inpt_expr, in_to_hidden, hidden_to_hiddens,
             hidden_to_out, hidden_biases, initial_hiddens,
-            recurrents, out_bias, hidden_transfers, out_transfer)
+            recurrents, out_bias, hidden_transfers, out_transfer, in_to_out=in_to_out)
 
         return {'{}_{}'.format(true_name, k): v for k, v in exprs.iteritems()}
 
@@ -282,6 +292,7 @@ class LadderRnn(GenericRnnAE, DenoisingMixin, SupervisedBrezeWrapperBase):
                  max_iter=1000,
                  gradient_clip=False,
                  verbose=False,
+                 skip_to_out=False,
                  noise_type='gauss', c_noise=.2):
 
         self.n_hiddens_pred = n_hiddens_pred
@@ -299,12 +310,13 @@ class LadderRnn(GenericRnnAE, DenoisingMixin, SupervisedBrezeWrapperBase):
                                         imp_weight,
                                         max_iter,
                                         gradient_clip,
-                                        verbose)
+                                        verbose,
+                                        skip_to_out)
 
     def _make_spec(self):
         spec = super(LadderRnn, self)._make_spec()
         spec.update(rnn.parameters(
-            self.n_latent, self.n_hiddens_pred, self.n_inpt, prefix=self.predict_name + '_'))
+            self.n_latent, self.n_hiddens_pred, self.n_inpt, self.skip_to_out, prefix=self.predict_name + '_'))
         return spec
 
     def _init_exprs(self):
@@ -317,7 +329,7 @@ class LadderRnn(GenericRnnAE, DenoisingMixin, SupervisedBrezeWrapperBase):
         self.exprs.update(self._make_exprs(self.predict_name, input_name, self.out_transfer))
         
         # TODO: figure out how to add loss with next timestep's input as target
-        # TODO: enable imp weights; there might be diferent ones for input and output(?)
+        # TODO: enable imp weights; there might be different ones for input and output(?)
         reconstruction_loss = self.exprs['loss']
         prediction_loss = supervised_loss(
             self.exprs['target'], self.exprs[self.predict_name + '_output'], self.loss, 2,
