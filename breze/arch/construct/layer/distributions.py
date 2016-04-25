@@ -96,6 +96,13 @@ class NormalGauss(Distribution):
         return nll.reshape(X.shape)
 
 
+class AffineGauss(Distribution):
+    """ z ~ N(0, diag(var))
+        x = transform * z + mean"""
+    # TODO: implement
+    def __init__(self, mean, var, transform): pass
+
+
 class Bernoulli(Distribution):
 
     def __init__(self, rate, rng=None):

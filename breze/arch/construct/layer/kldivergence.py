@@ -2,7 +2,7 @@
 
 import theano.tensor as T
 
-from distributions import DiagGauss, NormalGauss, Bernoulli
+from distributions import DiagGauss, NormalGauss, AffineGauss, Bernoulli
 
 from breze.arch.component.misc import inter_gauss_kl
 
@@ -15,6 +15,11 @@ def gauss_normalgauss_kl(p, q):
 def gauss_gauss_kl(p, q):
     kl = inter_gauss_kl(p.mean, p.var, q.mean, q.var)
     return kl
+
+
+def diaggauss_affinegauss_kl(p, q):
+    kl = inter_gauss_kl(p.mean, p.var, q.mean, q.var, q.transform)
+    pass
 
 
 def bern_bern_kl(p, q):
@@ -33,6 +38,7 @@ def bern_bern_kl(p, q):
 kl_table = {
     (DiagGauss, NormalGauss): gauss_normalgauss_kl,
     (DiagGauss, DiagGauss): gauss_gauss_kl,
+    (DiagGauss, AffineGauss): diaggauss_affinegauss_kl,
     (Bernoulli,  Bernoulli): bern_bern_kl
 }
 

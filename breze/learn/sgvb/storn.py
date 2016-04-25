@@ -9,7 +9,7 @@ import theano.tensor.nnet
 
 from theano.compile import optdb
 
-from breze.arch.construct.layer.distributions import NormalGauss, DiagGauss
+from breze.arch.construct.layer.distributions import NormalGauss, DiagGauss, AffineGauss
 from breze.arch.construct.layer.varprop.sequential import FDRecurrent
 from breze.arch.construct.layer.varprop.simple import AffineNonlinear
 from breze.arch.construct.neural import distributions as neural_dists
@@ -189,7 +189,7 @@ class TimeDependentBasisAffineGauss(TimeDependentGaussLatent):
         var, _ = theano.scan(times_basis, sequences=[var, timesteps], non_sequences=basis_indices)
 
         # return FullGauss(mean, var)
-        return DiagGauss(mean, var)
+        return AffineGauss(mean, var)
 
 
 
