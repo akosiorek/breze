@@ -107,7 +107,6 @@ class TimeDependentGaussLatent(GaussLatentStornMixin):
         if n_output is None:
             n_output = recog.n_output
 
-
         n_time_steps, _, _ = recog.inpt.shape
 
         x_mean, x_var = recog.rnn.layers[-3].outputs   # mean and variance of the hidden state
@@ -142,41 +141,28 @@ class TimeDependentBasisGauss(TimeDependentGaussLatent):
         n = np.linspace(0, 1, num_basis)
         N, T = np.meshgrid(n, t)
 
-        basis = np.exp(-(T - N) ** 2 / (2 * h))
-        return basis / basis.sum(axis=-1, keepdims=True)
+        basis = np.exp(-(T - N) ** 2 / (2 * h)).astype(theano.config.floatX)
+        basis = basis / basis.sum(axis=-1, keepdims=True)
+        return basis
 
     def make_prior(self, sample, recog):
 
         n_time_steps, _, dims = recog.inpt.shape
-        dims = 49
+        dims = 64
         n_output = self.num_basis * dims
 
         mean, var = self._make_gaus_inputs(sample, recog, n_output)
 
         mean = wild_reshape(mean, (n_time_steps, -1, self.num_basis, dims))
-        # var = wild_reshape(var, (n_time_steps, -1, dims, self.num_basis))
-        #
-        shuffled = [0, 2, 3, 1]
-        mean = mean.dimshuffle(shuffled)
-        # mean, var = mean.dimshuffle(shuffled), var.dimshuffle(shuffled)
-        basis = self.basis_fun(160, self.num_basis)
+        var = wild_reshape(var, (n_time_steps, -1, self.num_basis, dims))
 
+        basis = T.constant(self.basis_fun(160, self.num_basis), 'basis')
+        mean, _ = theano.scan(lambda tens, mat: T.dot(mat, tens), sequences=[mean, basis])
+        var, _ = theano.scan(lambda tens, mat: T.dot(mat, tens), sequences=[var, basis])
 
-        def dot(A, b):
-            return T.dot(A, b)
-
-        # def ddot(A, b):
-        #     return T.dot(A, b).dot(A.T)
-
-        b = T.dmatrix('b')
-        mean, _ = theano.scan(dot, sequences=[mean, b])
-        mean = theano.function([], mean, givens={b: basis})
-        # # new_cov, _ = theano.scan(ddot, sequences=[var, basis])
-        #
-        mean.dimshuffle([0, 3, 1, 2])
 
         # return FullGauss(mean, var)
-        return DiagGauss(mean, mean**2)
+        return DiagGauss(mean, var)
 
 
 class StochasticRnn(GenericVariationalAutoEncoder):
