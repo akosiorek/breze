@@ -9,7 +9,7 @@ import theano.tensor.nnet
 
 from theano.compile import optdb
 
-from breze.arch.construct.layer.distributions import NormalGauss
+from breze.arch.construct.layer.distributions import NormalGauss, DiagGauss
 from breze.arch.construct.layer.varprop.sequential import FDRecurrent
 from breze.arch.construct.layer.varprop.simple import AffineNonlinear
 from breze.arch.construct.neural import distributions as neural_dists
@@ -75,7 +75,7 @@ class GaussLatentStornMixin(object):
     def make_prior(self, sample):
         return NormalGauss(sample.shape)
 
-    def make_recog(self, inpt):
+    def make_recog(self, inpt, recog=None):
         return self.distribution_klass(
             inpt,
             n_inpt=self.n_inpt,
@@ -91,6 +91,92 @@ class GaussLatentStornMixin(object):
 class GaussLatentBiStornMixin(GaussLatentStornMixin):
 
     distribution_klass = neural_dists.FastDropoutBiRnnDiagGauss
+
+
+from breze.arch.construct.neural.base import wild_reshape
+from breze.arch.construct.layer.varprop import simple as vp_simple
+
+
+class TimeDependentGaussLatent(GaussLatentStornMixin):
+
+    def _make_gaus_inputs(self, sample, recog, n_output=None):
+
+        p_dropout = 0.25
+        n_inpt = recog.rnn.layers[-4].n_output
+
+        if n_output is None:
+            n_output = recog.n_output
+
+
+        n_time_steps, _, _ = recog.inpt.shape
+
+        x_mean, x_var = recog.rnn.layers[-3].outputs   # mean and variance of the hidden state
+        x_mean_flat = wild_reshape(x_mean, (-1, n_inpt))
+        x_var_flat = wild_reshape(x_var, (-1, n_inpt))
+        fd = vp_simple.FastDropout(
+            x_mean_flat, x_var_flat, p_dropout)
+
+        x_mean_flat, x_var_flat = fd.outputs
+
+        affine = vp_simple.AffineNonlinear(
+            x_mean_flat, x_var_flat, n_inpt, n_output, 'identity',
+            declare=self.parameters.declare)
+        output_mean_flat, output_var_flat = affine.outputs
+
+        output_mean = wild_reshape(output_mean_flat, (n_time_steps, -1, n_output))
+        output_var = wild_reshape(output_var_flat, (n_time_steps, -1, n_output))
+        return output_mean, output_var
+
+    def make_prior(self, sample, recog):
+        output_mean, output_var = self._make_gaus_inputs(sample, recog)
+        return DiagGauss(output_mean, output_var)
+
+
+class TimeDependentBasisGauss(TimeDependentGaussLatent):
+    basis = None
+    num_basis = 10
+
+    @staticmethod
+    def basis_fun(timesteps, num_basis, h=1):
+        t = np.linspace(0, 1, timesteps)
+        n = np.linspace(0, 1, num_basis)
+        N, T = np.meshgrid(n, t)
+
+        basis = np.exp(-(T - N) ** 2 / (2 * h))
+        return basis / basis.sum(axis=-1, keepdims=True)
+
+    def make_prior(self, sample, recog):
+
+        n_time_steps, _, dims = recog.inpt.shape
+        dims = 49
+        n_output = self.num_basis * dims
+
+        mean, var = self._make_gaus_inputs(sample, recog, n_output)
+
+        mean = wild_reshape(mean, (n_time_steps, -1, self.num_basis, dims))
+        # var = wild_reshape(var, (n_time_steps, -1, dims, self.num_basis))
+        #
+        shuffled = [0, 2, 3, 1]
+        mean = mean.dimshuffle(shuffled)
+        # mean, var = mean.dimshuffle(shuffled), var.dimshuffle(shuffled)
+        basis = self.basis_fun(160, self.num_basis)
+
+
+        def dot(A, b):
+            return T.dot(A, b)
+
+        # def ddot(A, b):
+        #     return T.dot(A, b).dot(A.T)
+
+        b = T.dmatrix('b')
+        mean, _ = theano.scan(dot, sequences=[mean, b])
+        mean = theano.function([], mean, givens={b: basis})
+        # # new_cov, _ = theano.scan(ddot, sequences=[var, basis])
+        #
+        mean.dimshuffle([0, 3, 1, 2])
+
+        # return FullGauss(mean, var)
+        return DiagGauss(mean, mean**2)
 
 
 class StochasticRnn(GenericVariationalAutoEncoder):

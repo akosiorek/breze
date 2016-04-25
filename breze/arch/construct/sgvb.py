@@ -28,7 +28,7 @@ class VariationalAutoEncoder(Layer):
         self.latent = self.recog.stt
         self.recog_sample = self.recog.sample()
 
-        self.prior = self.make_prior(self.recog_sample)
+        self.prior = self.make_prior(self.recog_sample, self.recog)
 
         if self.make_cond is None:
             gen_inpt = self.recog_sample
