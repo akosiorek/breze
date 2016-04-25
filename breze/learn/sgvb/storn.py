@@ -99,9 +99,10 @@ from breze.arch.construct.layer.varprop import simple as vp_simple
 
 class TimeDependentGaussLatent(GaussLatentStornMixin):
 
+    p_dropout = 0.25
+
     def _make_gaus_inputs(self, sample, recog, n_output=None):
 
-        p_dropout = 0.25
         n_inpt = recog.rnn.layers[-4].n_output
 
         if n_output is None:
@@ -113,7 +114,7 @@ class TimeDependentGaussLatent(GaussLatentStornMixin):
         x_mean_flat = wild_reshape(x_mean, (-1, n_inpt))
         x_var_flat = wild_reshape(x_var, (-1, n_inpt))
         fd = vp_simple.FastDropout(
-            x_mean_flat, x_var_flat, p_dropout)
+            x_mean_flat, x_var_flat, self.p_dropout)
 
         x_mean_flat, x_var_flat = fd.outputs
 
@@ -131,38 +132,67 @@ class TimeDependentGaussLatent(GaussLatentStornMixin):
         return DiagGauss(output_mean, output_var)
 
 
-class TimeDependentBasisGauss(TimeDependentGaussLatent):
-    basis = None
+class TimeDependentBasisDiagGauss(TimeDependentGaussLatent):
+
     num_basis = 10
-
-    @staticmethod
-    def basis_fun(timesteps, num_basis, h=1):
-        t = np.linspace(0, 1, timesteps)
-        n = np.linspace(0, 1, num_basis)
-        N, T = np.meshgrid(n, t)
-
-        basis = np.exp(-(T - N) ** 2 / (2 * h)).astype(theano.config.floatX)
-        basis = basis / basis.sum(axis=-1, keepdims=True)
-        return basis
 
     def make_prior(self, sample, recog):
 
-        n_time_steps, _, dims = recog.inpt.shape
-        dims = 64
-        n_output = self.num_basis * dims
+        n_time_steps, _, _ = recog.inpt.shape
+        out_dims = recog.n_output
+        n_output = self.num_basis * out_dims
 
         mean, var = self._make_gaus_inputs(sample, recog, n_output)
 
-        mean = wild_reshape(mean, (n_time_steps, -1, self.num_basis, dims))
-        var = wild_reshape(var, (n_time_steps, -1, self.num_basis, dims))
+        mean = wild_reshape(mean, (n_time_steps, -1, self.num_basis, out_dims))
+        var = wild_reshape(var, (n_time_steps, -1, self.num_basis, out_dims))
 
-        basis = T.constant(self.basis_fun(160, self.num_basis), 'basis')
-        mean, _ = theano.scan(lambda tens, mat: T.dot(mat, tens), sequences=[mean, basis])
-        var, _ = theano.scan(lambda tens, mat: T.dot(mat, tens), sequences=[var, basis])
+        basis_indices = T.constant(np.linspace(0, 1, self.num_basis), dtype=theano.config.floatX)
+        t = T.fscalar('t')
+        timesteps = T.arange(0, 1, 1. / n_time_steps)
 
+        def times_basis(tens, tt, b):
+            basis = T.exp(-(tt-b)**2 / 2)
+            return T.dot(basis / basis.sum(), tens)
+
+        mean, _ = theano.scan(times_basis, sequences=[mean, timesteps], non_sequences=basis_indices)
+        var, _ = theano.scan(times_basis, sequences=[var, timesteps], non_sequences=basis_indices)
 
         # return FullGauss(mean, var)
         return DiagGauss(mean, var)
+
+
+class TimeDependentBasisAffineGauss(TimeDependentGaussLatent):
+
+    num_basis = 10
+
+    def make_prior(self, sample, recog):
+
+        n_time_steps, _, _ = recog.inpt.shape
+        out_dims = recog.n_output
+        n_output = self.num_basis * out_dims
+
+        mean, var = self._make_gaus_inputs(sample, recog, n_output)
+
+        mean = wild_reshape(mean, (n_time_steps, -1, self.num_basis, out_dims))
+        var = wild_reshape(var, (n_time_steps, -1, self.num_basis, out_dims))
+
+        basis_indices = T.constant(np.linspace(0, 1, self.num_basis), dtype=theano.config.floatX)
+        t = T.fscalar('t')
+        timesteps = T.arange(0, 1, 1. / n_time_steps)
+
+        def times_basis(tens, tt, b):
+            basis = T.exp(-(tt-b)**2 / 2)
+            return T.dot(basis / basis.sum(), tens)
+
+        mean, _ = theano.scan(times_basis, sequences=[mean, timesteps], non_sequences=basis_indices)
+        var, _ = theano.scan(times_basis, sequences=[var, timesteps], non_sequences=basis_indices)
+
+        # return FullGauss(mean, var)
+        return DiagGauss(mean, var)
+
+
+
 
 
 class StochasticRnn(GenericVariationalAutoEncoder):
