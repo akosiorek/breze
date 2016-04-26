@@ -101,7 +101,7 @@ class TimeDependentGaussLatent(GaussLatentStornMixin):
 
     p_dropout = 0.25
 
-    def _make_gaus_inputs(self, sample, recog, n_output=None):
+    def _make_gaus_inputs(self, sample, recog, n_output=None, transfer='identity'):
 
         n_inpt = recog.rnn.layers[-4].n_output
 
@@ -119,7 +119,7 @@ class TimeDependentGaussLatent(GaussLatentStornMixin):
         x_mean_flat, x_var_flat = fd.outputs
 
         affine = vp_simple.AffineNonlinear(
-            x_mean_flat, x_var_flat, n_inpt, n_output, 'identity',
+            x_mean_flat, x_var_flat, n_inpt, n_output, transfer,
             declare=self.parameters.declare)
         output_mean_flat, output_var_flat = affine.outputs
 
@@ -164,9 +164,17 @@ class TimeDependentBasisDiagGauss(TimeDependentGaussLatent):
 
 class TimeDependentRankOneGauss(TimeDependentGaussLatent):
 
+    diag_constant = 1
+
     def make_prior(self, sample, recog):
         mean, var = self._make_gaus_inputs(sample, recog)
-        return RankOneGauss(mean, 1, var)
+
+        if self.diag_constant:
+            diag = self.diag_constant
+        else:
+            diag, _ = self._make_gaus_inputs(sample, recog, transfer='sigmoid')
+
+        return RankOneGauss(mean, diag, var)
 
 
 class StochasticRnn(GenericVariationalAutoEncoder):
