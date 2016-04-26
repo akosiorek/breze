@@ -9,7 +9,7 @@ import theano.tensor.nnet
 
 from theano.compile import optdb
 
-from breze.arch.construct.layer.distributions import NormalGauss, DiagGauss, AffineGauss
+from breze.arch.construct.layer.distributions import NormalGauss, DiagGauss, RankOneGauss
 from breze.arch.construct.layer.varprop.sequential import FDRecurrent
 from breze.arch.construct.layer.varprop.simple import AffineNonlinear
 from breze.arch.construct.neural import distributions as neural_dists
@@ -162,37 +162,11 @@ class TimeDependentBasisDiagGauss(TimeDependentGaussLatent):
         return DiagGauss(mean, var)
 
 
-class TimeDependentBasisAffineGauss(TimeDependentGaussLatent):
-
-    num_basis = 10
+class TimeDependentRankOneGauss(TimeDependentGaussLatent):
 
     def make_prior(self, sample, recog):
-
-        n_time_steps, _, _ = recog.inpt.shape
-        out_dims = recog.n_output
-        n_output = self.num_basis * out_dims
-
-        mean, var = self._make_gaus_inputs(sample, recog, n_output)
-
-        mean = wild_reshape(mean, (n_time_steps, -1, self.num_basis, out_dims))
-        var = wild_reshape(var, (n_time_steps, -1, self.num_basis, out_dims))
-
-        basis_indices = T.constant(np.linspace(0, 1, self.num_basis), dtype=theano.config.floatX)
-        t = T.fscalar('t')
-        timesteps = T.arange(0, 1, 1. / n_time_steps)
-
-        def times_basis(tens, tt, b):
-            basis = T.exp(-(tt-b)**2 / 2)
-            return T.dot(basis / basis.sum(), tens)
-
-        mean, _ = theano.scan(times_basis, sequences=[mean, timesteps], non_sequences=basis_indices)
-        var, _ = theano.scan(times_basis, sequences=[var, timesteps], non_sequences=basis_indices)
-
-        # return FullGauss(mean, var)
-        return AffineGauss(mean, var)
-
-
-
+        mean, var = self._make_gaus_inputs(sample, recog)
+        return RankOneGauss(mean, 1, var)
 
 
 class StochasticRnn(GenericVariationalAutoEncoder):

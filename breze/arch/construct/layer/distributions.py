@@ -96,11 +96,50 @@ class NormalGauss(Distribution):
         return nll.reshape(X.shape)
 
 
-class AffineGauss(Distribution):
+class RankOneGauss(Distribution):
     """ z ~ N(0, diag(var))
         x = transform * z + mean"""
-    # TODO: implement
-    def __init__(self, mean, var, transform): pass
+    def __init__(self, mean, var, u, rng=None):
+        self.mean = mean
+
+        # This allows to use var with shape (1, 1, n)
+        self.var = T.fill(mean, var)
+        self.u = u
+        self.eta = 1 / ((u ** 2 / var ** 2).sum() + 1)
+
+        # self.stt = T.concatenate((mean, self.var), -1)
+        # self.maximum = self.mean
+        super(RankOneGauss, self).__init__(rng)
+
+    def sample(self, epsilon=None):
+        mean_flat = assert_no_time(self.mean)
+        var_flat = assert_no_time(self.var)
+        u_flat = assert_no_time(self.u)
+
+        d = T.diag(1 / T.sqrt(var_flat))
+        R = d - (1 - T.sqrt(self.eta)) / (u_flat ** 2 / var_flat) * T.diag(1 / var_flat) * u_flat * u_flat.T * d
+
+
+        if epsilon is None:
+            noise = self.rng.normal(size=mean_flat.shape)
+        else:
+            noise = epsilon
+
+        sample = mean_flat + R * noise
+        if self.mean.ndim == 3:
+            return recover_time(sample, self.mean.shape[0])
+        else:
+            return sample
+
+    # def nll(self, X, inpt=None):
+    #     var_offset = 1e-4
+    #     var = self.var
+    #     var += var_offset
+    #     residuals = X - self.mean
+    #     weighted_squares = -(residuals ** 2) / (2 * var)
+    #     normalization = T.log(T.sqrt(2 * np.pi * var))
+    #     ll = weighted_squares - normalization
+    #     return -ll
 
 
 class Bernoulli(Distribution):
