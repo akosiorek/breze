@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import theano
 import theano.tensor as T
 import numpy as np
 
@@ -99,47 +100,51 @@ class NormalGauss(Distribution):
 class RankOneGauss(Distribution):
     """ z ~ N(0, diag(var))
         x = transform * z + mean"""
-    def __init__(self, mean, var, u, rng=None):
+    def __init__(self, mean, var, u, rng=None, eps=1e-16):
         self.mean = mean
 
         # This allows to use var with shape (1, 1, n)
         self.var = T.fill(mean, var)
         self.u = u
-        self.eta = 1 / ((u ** 2 / var ** 2).sum() + 1)
+        self.eps = eps
 
-        # self.stt = T.concatenate((mean, self.var), -1)
-        # self.maximum = self.mean
+        var_flat = assert_no_time(self.var)
+        u_flat = assert_no_time(self.u) + self.eps
+        eta, _ = theano.scan(lambda u, v: 1 / ((u ** 2 / v).sum() + 1), sequences=[u_flat, var_flat])
+        eta = wild_reshape(eta, (self.mean.shape[0], 1, -1))
+        self.eta = recover_time(eta, self.mean.shape[0])
+
         super(RankOneGauss, self).__init__(rng)
 
     def sample(self, epsilon=None):
         mean_flat = assert_no_time(self.mean)
         var_flat = assert_no_time(self.var)
-        u_flat = assert_no_time(self.u)
+        u_flat = assert_no_time(self.u) + self.eps
+        eta_flat = assert_no_time(self.eta)
 
-        d = T.diag(1 / T.sqrt(var_flat))
-        R = d - (1 - T.sqrt(self.eta)) / (u_flat ** 2 / var_flat) * T.diag(1 / var_flat) * u_flat * u_flat.T * d
-
+        eye = T.eye(mean_flat.shape[-1])
 
         if epsilon is None:
             noise = self.rng.normal(size=mean_flat.shape)
         else:
             noise = epsilon
 
-        sample = mean_flat + R * noise
+        def foo(v, u, e, n):
+            sqrtd = T.diag(T.sqrt(v))
+            invd = T.diag(1 / v)
+            a = (1 - T.sqrt(e)) / (u ** 2 / v).sum()
+            u = u[np.newaxis, :]
+            A = T.nlinalg.matrix_inverse(eye - a * T.dot(T.dot(invd, u.T), u))
+            R = T.dot(sqrtd, A).T
+            return T.dot(R, n)
+
+        sample, _ = theano.scan(foo, sequences=[var_flat, u_flat, eta_flat, noise])
+        sample += mean_flat
+
         if self.mean.ndim == 3:
             return recover_time(sample, self.mean.shape[0])
         else:
             return sample
-
-    # def nll(self, X, inpt=None):
-    #     var_offset = 1e-4
-    #     var = self.var
-    #     var += var_offset
-    #     residuals = X - self.mean
-    #     weighted_squares = -(residuals ** 2) / (2 * var)
-    #     normalization = T.log(T.sqrt(2 * np.pi * var))
-    #     ll = weighted_squares - normalization
-    #     return -ll
 
 
 class Bernoulli(Distribution):
