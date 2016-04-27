@@ -171,6 +171,6 @@ def inter_gauss_kl(mean, var, mean_=0, var_=1, var_offset=0, var_offset_=0, u=No
     m1, s1, m2, s2 = mean, T.sqrt(var + var_offset), mean_, T.sqrt(var_ + var_offset_)
     kl = T.log(s2 / s1) + (s1 ** 2 + (m1 - m2) ** 2) / (2 * s2 ** 2) - .5
     if u is not None:
-        kl -= 0.5 * (T.log(eta) + eta * (s1 ** 4 + (m1 - m2) ** 2) * u ** 2 / s2 ** 4)
+        kl -= (T.log(eta) / mean.shape.prod() + eta * (s1 ** 4 + (m1 - m2) ** 2) * u ** 2 / s2 ** 4) / 2
     return kl
 
