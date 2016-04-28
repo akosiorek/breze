@@ -14,6 +14,8 @@ from breze.arch.construct.layer.varprop.sequential import FDRecurrent
 from breze.arch.construct.layer.varprop.simple import AffineNonlinear
 from breze.arch.construct.neural import distributions as neural_dists
 from breze.learn.utils import theano_floatx
+from breze.arch.construct.neural.base import wild_reshape
+from breze.arch.construct.layer.varprop import simple as vp_simple
 
 from base import GenericVariationalAutoEncoder
 
@@ -93,8 +95,14 @@ class GaussLatentBiStornMixin(GaussLatentStornMixin):
     distribution_klass = neural_dists.FastDropoutBiRnnDiagGauss
 
 
-from breze.arch.construct.neural.base import wild_reshape
-from breze.arch.construct.layer.varprop import simple as vp_simple
+class DiagGuassLearnablePrior(GaussLatentStornMixin):
+
+    def make_prior(self, sample, recog):
+
+        n = (recog.n_output,)
+        self.prior_mean = self.parameters.declare(n)
+        self.prior_var = self.parameters.declare(n)
+        return DiagGauss(self.prior_mean, self.prior_var ** 2)
 
 
 class TimeDependentGaussLatent(GaussLatentStornMixin):

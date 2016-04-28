@@ -53,4 +53,5 @@ from mlp import (
 from storn import (
     StochasticRnn, BernoulliVisibleStornMixin, GaussLatentStornMixin,
     GaussVisibleStornMixin, ConstVarGaussVisibleStornMixin,
-    GaussLatentBiStornMixin, TimeDependentGaussLatent, TimeDependentBasisDiagGauss, TimeDependentRankOneGauss)
+    GaussLatentBiStornMixin, TimeDependentGaussLatent, TimeDependentBasisDiagGauss,
+    TimeDependentRankOneGauss, DiagGuassLearnablePrior)
