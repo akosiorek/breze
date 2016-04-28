@@ -107,6 +107,19 @@ class DiagGuassLearnablePrior(GaussLatentStornMixin):
         return DiagGauss(self.prior_mean, self.prior_var ** 2 + self.var_offset)
 
 
+class RankOneGuassLearnablePrior(GaussLatentStornMixin):
+
+    var_offset = 0
+
+    def make_prior(self, sample, recog):
+
+        n = (recog.n_output,)
+        self.prior_mean = self.parameters.declare(n)
+        self.prior_var = self.parameters.declare(n)
+        self.prior_u = self.parameters.declare(n)
+        return RankOneGauss(self.prior_mean, self.prior_var ** 2 + self.var_offset, self.prior_u)
+
+
 class TimeDependentGaussLatent(GaussLatentStornMixin):
 
     p_dropout = 0.25
