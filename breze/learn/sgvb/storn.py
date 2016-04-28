@@ -97,12 +97,14 @@ class GaussLatentBiStornMixin(GaussLatentStornMixin):
 
 class DiagGuassLearnablePrior(GaussLatentStornMixin):
 
+    var_offset = 0
+
     def make_prior(self, sample, recog):
 
         n = (recog.n_output,)
         self.prior_mean = self.parameters.declare(n)
         self.prior_var = self.parameters.declare(n)
-        return DiagGauss(self.prior_mean, self.prior_var ** 2)
+        return DiagGauss(self.prior_mean, self.prior_var ** 2 + self.var_offset)
 
 
 class TimeDependentGaussLatent(GaussLatentStornMixin):
