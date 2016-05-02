@@ -74,10 +74,10 @@ class GaussLatentStornMixin(object):
 
     distribution_klass = neural_dists.FastDropoutRnnDiagGauss
 
-    def make_prior(self, sample):
+    def make_prior(self, sample, recog=None):
         return NormalGauss(sample.shape)
 
-    def make_recog(self, inpt, recog=None):
+    def make_recog(self, inpt):
         return self.distribution_klass(
             inpt,
             n_inpt=self.n_inpt,
@@ -198,6 +198,44 @@ class TimeDependentRankOneGauss(TimeDependentGaussLatent):
             diag, _ = self._make_gaus_inputs(sample, recog, transfer='sigmoid')
 
         return RankOneGauss(mean, diag, var)
+
+
+class NormalPriorMixin(object):
+    def make_prior(self, sample, recog=None):
+        return NormalGauss(sample.shape)
+
+
+class ParametricDiagGaussLatentMixin(object):
+    def make_recog(self, inpt):
+
+        time_steps, batch_size, _ = inpt.shape
+        n = (self.n_latent,)
+        self.prior_mean = self.parameters.declare(n)
+        self.prior_var = self.parameters.declare(n)
+
+        mean, var = (T.tile(i, (time_steps, batch_size, 1), ndim=3) for i in (self.prior_mean, self.prior_var))
+
+        distrib = DiagGauss(mean, var ** 2)
+        distrib.rnn = lambda x: x
+        setattr(distrib.rnn, 'layers', [])
+        return distrib
+
+
+class ParametricRankOneGaussLatentMixin(object):
+    def make_recog(self, inpt):
+
+        time_steps, batch_size, _ = inpt.shape
+        n = (self.n_latent,)
+        self.prior_mean = self.parameters.declare(n)
+        self.prior_var = self.parameters.declare(n)
+        self.prior_u = self.parameters.declare(n)
+        mean, var, u = (T.tile(i, (time_steps, batch_size, 1), ndim=3) for
+                        i in (self.prior_mean, self.prior_var, self.prior_u))
+
+        distrib = RankOneGauss(mean, var ** 2, u)
+        distrib.rnn = lambda x: x
+        setattr(distrib.rnn, 'layers', [])
+        return distrib
 
 
 class StochasticRnn(GenericVariationalAutoEncoder):

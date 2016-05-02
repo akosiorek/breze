@@ -27,6 +27,8 @@ class VariationalAutoEncoder(Layer):
         self.recog = self.make_recog(self.inpt)
         self.latent = self.recog.stt
         self.recog_sample = self.recog.sample()
+        # self.recog_sample = self.recog.sample().flatten().dimshuffle('x', 'x', 0)
+        # print 'recog_sample:', self.recog_sample.broadcastable
 
         self.prior = self.make_prior(self.recog_sample, self.recog)
 

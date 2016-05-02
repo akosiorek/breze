@@ -54,4 +54,5 @@ from storn import (
     StochasticRnn, BernoulliVisibleStornMixin, GaussLatentStornMixin,
     GaussVisibleStornMixin, ConstVarGaussVisibleStornMixin,
     GaussLatentBiStornMixin, TimeDependentGaussLatent, TimeDependentBasisDiagGauss,
-    TimeDependentRankOneGauss, DiagGuassLearnablePrior, RankOneGuassLearnablePrior)
+    TimeDependentRankOneGauss, DiagGuassLearnablePrior, RankOneGuassLearnablePrior,
+    NormalPriorMixin, ParametricDiagGaussLatentMixin, ParametricRankOneGaussLatentMixin)
