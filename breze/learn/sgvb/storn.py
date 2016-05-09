@@ -70,6 +70,12 @@ class ConstVarGaussVisibleStornMixin(object):
             declare=self.parameters.declare)
 
 
+class LatentPriorNormalGaussMixin(object):
+
+    def make_prior(self, sample, recog=None):
+        return NormalGauss(sample.shape)
+
+
 class GaussLatentStornMixin(object):
 
     distribution_klass = neural_dists.FastDropoutRnnDiagGauss

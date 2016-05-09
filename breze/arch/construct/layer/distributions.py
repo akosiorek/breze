@@ -111,37 +111,36 @@ class RankOneGauss(Distribution):
         # TODO: That's just a stub. What is stt for anyway?
         self.stt = T.concatenate((self.mean, self.var, self.u), -1)
 
-        var_flat = assert_no_time(self.var)
-        u_flat = assert_no_time(self.u) + self.eps
-        eta, _ = theano.scan(lambda u, v: 1 / ((u ** 2 / v).sum() + 1), sequences=[u_flat, var_flat])
-        eta = wild_reshape(eta, (self.mean.shape[0], 1, -1))
-        self.eta = recover_time(eta, self.mean.shape[0])
-
+        # var_flat = assert_no_time(self.var)
+        # u_flat = assert_no_time(self.u) + self.eps
+        # eta, _ = theano.scan(lambda u, v: 1 / ((u ** 2 / v).sum() + 1), sequences=[u_flat, var_flat])
+        # eta = wild_reshape(eta, (self.mean.shape[0], 1, -1))
+        # self.eta = recover_time(eta, self.mean.shape[0])
+        self.eta = 1
         super(RankOneGauss, self).__init__(rng)
 
     def sample(self, epsilon=None):
         mean_flat = assert_no_time(self.mean)
         var_flat = assert_no_time(self.var)
         u_flat = assert_no_time(self.u) + self.eps
-        eta_flat = assert_no_time(self.eta)
-
-        eye = T.eye(mean_flat.shape[-1])
+        # eta_flat = assert_no_time(self.eta)
 
         if epsilon is None:
             noise = self.rng.normal(size=mean_flat.shape)
         else:
             noise = epsilon
 
-        def foo(v, u, e, n):
-            sqrtd = T.diag(T.sqrt(v))
-            invd = T.diag(1 / v)
-            a = (1 - T.sqrt(e)) / (u ** 2 / v).sum()
+        def foo(v, u, n):
+            eta = 1 / ((u ** 2 / v).sum() + 1)
+            a = (1 - T.sqrt(eta)) / (u ** 2 / v).sum()
             u = u[np.newaxis, :]
-            A = T.nlinalg.matrix_inverse(eye - a * T.dot(T.dot(invd, u.T), u))
-            R = T.dot(sqrtd, A).T
-            return T.dot(R, n)
+            x = - a * u / v
+            alpha = - 1 / (1 + T.dot(x, u.T))
 
-        sample, _ = theano.scan(foo, sequences=[var_flat, u_flat, eta_flat, noise])
+            n *= T.sqrt(v)
+            return n + (alpha * T.dot(u.T, x).dot(n)).squeeze()
+
+        sample, _ = theano.scan(foo, sequences=[var_flat, u_flat, noise])
         sample += mean_flat
 
         if self.mean.ndim == 3:
