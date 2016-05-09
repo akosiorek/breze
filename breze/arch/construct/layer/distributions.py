@@ -108,6 +108,9 @@ class RankOneGauss(Distribution):
         self.u = u
         self.eps = eps
 
+        # TODO: That's just a stub. What is stt for anyway?
+        self.stt = T.concatenate((self.mean, self.var, self.u), -1)
+
         var_flat = assert_no_time(self.var)
         u_flat = assert_no_time(self.u) + self.eps
         eta, _ = theano.scan(lambda u, v: 1 / ((u ** 2 / v).sum() + 1), sequences=[u_flat, var_flat])
