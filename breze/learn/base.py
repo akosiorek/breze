@@ -73,7 +73,7 @@ class BrezeWrapperBase(object):
 
     # Not all subclasses need to implement this. For this case, we supply a
     # default.
-    imp_weight = False
+    use_imp_weight = False
 
     def _d_loss(self):
         """Return a theano expression for the gradient of the loss wrt the
@@ -463,9 +463,9 @@ class UnsupervisedModel(Model, BrezeWrapperBase):
             self._f_loss, self._f_dloss = self._make_loss_functions(
                 imp_weight=use_imp_weight)
 
-        if W is None and self.imp_weight:
+        if W is None and self.use_imp_weight:
             raise ValueError('need to provide ``W``.')
-        if W is not None and not self.imp_weight:
+        if W is not None and not self.use_imp_weight:
             raise ValueError('do not need ``W``.')
 
         arg_args = [X, W] if use_imp_weight else [X]
@@ -527,7 +527,7 @@ class UnsupervisedModel(Model, BrezeWrapperBase):
     def _make_score_function(self):
         """Return a function to predict targets from input sequences."""
         key = 'true_loss' if 'true_loss' in self.exprs else 'loss'
-        args = ['inpt'] if not self.imp_weight else ['inpt', 'imp_weight']
+        args = ['inpt'] if not self.use_imp_weight else ['inpt', 'imp_weight']
         return self.function(args, key)
 
     def score(self, X, W=None):
