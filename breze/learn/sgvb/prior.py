@@ -108,9 +108,9 @@ class RankOneGaussRecogMixin(object):
 class DoublyStochasticPrior(GenericVariationalAutoEncoder):
 
     sample_dim = 1,
-    # theano_optimizer = optdb.query(theano.gof.Query(
-    #     include=['fast_run'], exclude=['scan_eqopt1', 'scan_eqopt2']))
-    # mode = theano.Mode(linker='cvm', optimizer=theano_optimizer)
+    theano_optimizer = optdb.query(theano.gof.Query(
+        include=['fast_run'], exclude=['scan_eqopt1', 'scan_eqopt2']))
+    mode = theano.Mode(linker='cvm', optimizer=theano_optimizer)
 
     def __init__(self, n_inpt, n_latent, n_hiddens_gen,
                  gen_transfers,

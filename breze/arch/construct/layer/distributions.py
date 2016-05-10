@@ -98,8 +98,12 @@ class NormalGauss(Distribution):
 
 
 class RankOneGauss(Distribution):
-    """ z ~ N(0, diag(var))
-        x = transform * z + mean"""
+    """ z ~ N(z|mean, C)
+        C = diag(var) + uu^T
+
+        C factorised as C = FF^T according to Rezende and Wierstra +
+        Sherman-Morrison formula"""
+
     def __init__(self, mean, var, u, rng=None, eps=1e-16):
         self.mean = mean
 
@@ -110,27 +114,33 @@ class RankOneGauss(Distribution):
 
         # TODO: That's just a stub. What is stt for anyway?
         self.stt = T.concatenate((self.mean, self.var, self.u), -1)
+        self.maximum = self.mean
 
-        # var_flat = assert_no_time(self.var)
-        # u_flat = assert_no_time(self.u) + self.eps
-        # eta, _ = theano.scan(lambda u, v: 1 / ((u ** 2 / v).sum() + 1), sequences=[u_flat, var_flat])
-        # eta = wild_reshape(eta, (self.mean.shape[0], 1, -1))
-        # self.eta = recover_time(eta, self.mean.shape[0])
-        self.eta = 1
+        # useful for KL computation
+        self.eta = self._make_eta()
+
         super(RankOneGauss, self).__init__(rng)
+
+    def _make_eta(self):
+        var_flat = assert_no_time(self.var)
+        u_flat = assert_no_time(self.u) + self.eps
+        eta, _ = theano.scan(lambda u, v: 1 / ((u ** 2 / v).sum() + 1),
+                             sequences=[u_flat, var_flat])
+
+        eta = wild_reshape(eta, (self.mean.shape[0], 1, -1))
+        return recover_time(eta, self.mean.shape[0])
 
     def sample(self, epsilon=None):
         mean_flat = assert_no_time(self.mean)
         var_flat = assert_no_time(self.var)
         u_flat = assert_no_time(self.u) + self.eps
-        # eta_flat = assert_no_time(self.eta)
 
         if epsilon is None:
             noise = self.rng.normal(size=mean_flat.shape)
         else:
             noise = epsilon
 
-        def foo(v, u, n):
+        def rank_one_perturb(v, u, n):
             eta = 1 / ((u ** 2 / v).sum() + 1)
             a = (1 - T.sqrt(eta)) / (u ** 2 / v).sum()
             u = u[np.newaxis, :]
@@ -140,7 +150,9 @@ class RankOneGauss(Distribution):
             n *= T.sqrt(v)
             return n + (alpha * T.dot(u.T, x).dot(n)).squeeze()
 
-        sample, _ = theano.scan(foo, sequences=[var_flat, u_flat, noise])
+        sample, _ = theano.scan(rank_one_perturb,
+                                sequences=[var_flat, u_flat, noise])
+
         sample += mean_flat
 
         if self.mean.ndim == 3:
