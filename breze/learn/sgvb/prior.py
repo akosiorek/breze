@@ -30,9 +30,9 @@ class LatentPriorNormalGaussMixin(object):
 
 class LearnableDiagGauss(Layer, DiagGauss):
 
-    def __init__(self, inpt, n_features, declare=None):
+    def __init__(self, shape, n_features, declare=None):
 
-        self.inpt = inpt
+        self.shape = shape
         self.n_features = n_features
         Layer.__init__(self, declare=declare)
 
@@ -41,8 +41,8 @@ class LearnableDiagGauss(Layer, DiagGauss):
         self.raw_mean = self.declare(n)
         self.raw_var = self.declare(n)
 
-        ndim = self.inpt.ndim
-        time_steps, batch_size, _ = self.inpt.shape
+        ndim = len(self.shape)
+        time_steps, batch_size, _ = self.shape
         shape = (time_steps, batch_size, 1)
 
         mean, var = (T.tile(i, shape, ndim=ndim) for i in (self.raw_mean, self.raw_var))

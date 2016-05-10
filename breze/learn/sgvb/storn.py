@@ -76,6 +76,23 @@ class LatentPriorNormalGaussMixin(object):
         return NormalGauss(sample.shape)
 
 
+class RecogMixin(object):
+
+    distribution_klass = neural_dists.FastDropoutRnnDiagGauss
+
+    def make_recog(self, inpt):
+        return self.distribution_klass(
+            inpt,
+            n_inpt=self.n_inpt,
+            n_hiddens=self.n_hiddens_recog,
+            n_output=self.n_latent,
+            hidden_transfers=self.recog_transfers,
+            p_dropout_inpt='parameterized',
+            p_dropout_hiddens=['parameterized' for _ in self.n_hiddens_recog],
+            p_dropout_hidden_to_out='parameterized',
+            declare=self.parameters.declare)
+
+
 class GaussLatentStornMixin(object):
 
     distribution_klass = neural_dists.FastDropoutRnnDiagGauss
