@@ -45,6 +45,7 @@ class LearnableDiagGauss(Layer, DiagGauss):
         time_steps, batch_size, _ = self.shape
         shape = (time_steps, batch_size, 1)
 
+        # repeat mean and var to produce sample of an appropriate size
         mean, var = (T.tile(i, shape, ndim=ndim) for i in (self.raw_mean, self.raw_var))
         DiagGauss.__init__(self, mean, var ** 2)
 

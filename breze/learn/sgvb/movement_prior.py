@@ -4,7 +4,7 @@ import theano.tensor as T
 import climin.initialize
 
 from breze.arch.util import ParameterSet
-from breze.arch.construct.layer.distributions import NormalGauss, RankOneGauss
+from breze.arch.construct.layer.distributions import NormalGauss, RankOneGauss, DiagGauss
 from breze.arch.construct.layer.kldivergence import kl_div
 from breze.arch.construct.sgvb import (
     VariationalAutoEncoder as _VariationalAutoEncoder)
@@ -15,6 +15,10 @@ from base import GenericVariationalAutoEncoder
 from prior import LearnableDiagGauss
 from storn import StochasticRnn
 
+
+#   TODO:
+# 2016-05-10 17:17:33,346 - __main__ INFO:            1       341.36  87868544.00  42081296.00
+# PMP has disabled transform!
 
 class ProbabilisticMovementPrimitive(RankOneGauss):
 
@@ -28,6 +32,7 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
 
         n_time_steps, n_samples, n_dims = x.shape
         x = wild_reshape(x, (n_time_steps, n_samples, self.n_basis, -1))
+        # x = x[:, :, 0, :]
 
         indices = T.constant(np.linspace(0, 1, self.n_basis), dtype=theano.config.floatX)
         timesteps = T.arange(0, 1, 1. / n_time_steps)
@@ -46,25 +51,53 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
 # recognition model - stochastic RNN
 # generating model - stochastic RNN
 
+import sys
+sys.setrecursionlimit(50000)
+
 
 class PmpPriorMixin(object):
+    kl_samples = 1
+
     def make_prior(self, recog_sample, recog=None):
 
         n_timesteps, n_samples, _ = recog_sample.shape
         n_mean_par = self.n_latent * self.n_bases
         n_dims = n_mean_par + self.n_latent
-        shape = (n_timesteps, n_samples, n_dims)
+
+        # we sample once per timeseries
+        shape = (1, n_samples, n_dims)
 
         self.hyperprior = NormalGauss(shape)
+        # self.hyperparam_model = NormalGauss(shape)
+
+        rng = T.shared_randomstreams.RandomStreams()
+        # from theano.sandbox.cuda.rng_curand import CURAND_RandomStreams as RandomStreams
+        # rng = RandomStreams(0)
+        self.noises = [rng.normal(size=shape[1:]) for _ in xrange(self.kl_samples)]
         self.hyperparam_model = LearnableDiagGauss(shape, n_dims,
                                                    self.parameters.declare)
 
-        sample = self.hyperparam_model.sample()
+        sample = self.hyperparam_model.sample(epsilon=self.noises[0])
+
+        # make the sample available for all timesteps
+        sample = T.tile(sample, (n_timesteps, 1, 1), ndim=len(shape))
+
         mean = sample[:, :, :n_mean_par]
+        # mean = sample[:, :, :self.n_latent]
         var = sample[:, :, n_mean_par:] ** 2
         u = mean
 
         return ProbabilisticMovementPrimitive(self.n_bases, mean, var, u)
+        # return DiagGauss(mean, var)
+        # return NormalGauss(mean.shape)
+
+    def _kl_expectation(self, kl_estimate):
+        if self.kl_samples == 1:
+            return kl_estimate
+
+        n0 = self.noises[0]
+        kls = [theano.clone(kl_estimate, {n0: n}) for n in self.noises]
+        return sum(kls) / self.kl_samples
 
 
 class PmpRnn(StochasticRnn):
@@ -98,23 +131,29 @@ class PmpRnn(StochasticRnn):
 
         # Create the KL divergence part of the loss.
         n_dim = inpt.ndim
+
         self.kl_coord_wise = kl_div(self.vae.recog, self.vae.prior)
 
         if self.use_imp_weight:
             self.kl_coord_wise *= imp_weight
-        self.kl_sample_wise = self.kl_coord_wise.sum(axis=n_dim - 1)
+
+        # self.kl_sample_wise = self.kl_coord_wise.sum(axis=n_dim - 1)
+        self.kl_sample_wise = self._kl_expectation(self.kl_coord_wise.sum(axis=n_dim - 1))
+
         self.kl = self.kl_sample_wise.mean()
 
         # Create the KL divergence between model and prior for hyperparams.
-        self.hyper_kl_coord_wise = kl_div(self.hyperparam_model, self.hyperprior)
-        if self.use_imp_weight:
-            self.hyper_kl_coord_wise *= imp_weight
-        self.hyper_kl_sample_wise = self.hyper_kl_coord_wise.sum(axis=n_dim - 1)
-        self.hyper_kl = self.hyper_kl_sample_wise.mean()
-
-
+        # It is the same for every sample and every timestep
         # TODO: scale hyper_kl
-        loss = self.kl + self.rec_loss + self.hyper_kl
+        loss = 0
+        # try:
+        #     self.hyper_kl = kl_div(self.hyperparam_model, self.hyperprior)[0, 0, :]
+        #     self.hyper_kl = self.hyper_kl.sum() / self.kl_sample_wise.shape.prod()
+        #     loss += self.hyper_kl
+        # except AttributeError as err:
+        #     print err.message, 'Skipping KL.'
+
+        loss += self.kl / 100 + self.rec_loss
 
         UnsupervisedModel.__init__(self, inpt=inpt,
                                    output=output,
@@ -134,4 +173,9 @@ class PmpRnn(StochasticRnn):
                                        par_std_in, sparsify_affine,
                                        sparsify_rec, spectral_radius)
 
-        #   TODO: further inits
+        try:
+            hyperparam = self.hyperparam_model
+            self.parameters[hyperparam.raw_mean] = 0
+            self.parameters[hyperparam.raw_var] = 1
+        except AttributeError as err:
+            print err.message, 'Skipping init.'

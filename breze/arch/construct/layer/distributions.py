@@ -2,6 +2,7 @@
 
 import theano
 import theano.tensor as T
+from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 import numpy as np
 
 from breze.arch.util import wild_reshape
@@ -29,7 +30,9 @@ class Distribution(object):
 
     def __init__(self, rng=None):
         if rng is None:
+            #   TODO: Look into performance of GPU-based random number generator
             self.rng = T.shared_randomstreams.RandomStreams()
+            # self.rng = RandomStreams()
         else:
             self.rng = rng
 
@@ -88,7 +91,10 @@ class NormalGauss(Distribution):
         self.maximum = self.mean
         super(NormalGauss, self).__init__(rng)
 
-    def sample(self):
+    def sample(self, epsilon=None):
+        if epsilon:
+            return epsilon
+
         return self.rng.normal(size=self.shape)
 
     def nll(self, X, inpt=None):
