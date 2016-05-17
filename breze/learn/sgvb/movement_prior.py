@@ -162,7 +162,6 @@ class PmpRnn(StochasticRnn):
 
         if self.annealing:
             self.iter = self.parameters.declare((1,))
-            self.parameters[self.iter] = 0
             self.alpha = T.min([1, 0.01 + self.iter / 10000.0])
             self.exprs['true_loss'] = loss + self.kl + self.rec_loss
         else:
@@ -194,3 +193,6 @@ class PmpRnn(StochasticRnn):
             self.parameters[hyperparam.raw_var] = 1
         except AttributeError as err:
             print err.message, 'Skipping init.'
+
+        if self.annealing:
+            self.parameters[self.iter] = 0
