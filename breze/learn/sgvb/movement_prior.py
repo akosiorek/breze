@@ -104,6 +104,10 @@ class PmpPriorMixin(object):
 
 
 class PmpRnn(StochasticRnn):
+    annealing = False
+
+    def anneal(self, n_iter):
+        self.parameters[self.iter] = n_iter
 
     def _init_exprs(self):
         inpt, self.imp_weight = self._make_start_exprs()
@@ -156,7 +160,15 @@ class PmpRnn(StochasticRnn):
         except AttributeError as err:
             print err.message, 'Skipping KL.'
 
-        loss += self.kl + self.rec_loss
+        if self.annealing:
+            self.iter = self.parameters.declare((1,))
+            self.parameters[self.iter] = 0
+            self.alpha = T.min([1, 0.01 + self.iter / 10000.0])
+            self.exprs['true_loss'] = loss + self.kl + self.rec_loss
+        else:
+            self.alpha = 1
+
+        loss += self.kl + self.alpha * self.rec_loss
 
         UnsupervisedModel.__init__(self, inpt=inpt,
                                    output=output,
