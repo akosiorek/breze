@@ -62,7 +62,7 @@ class NormalGaussHyperparamMixin(object):
 
 class DiagGaussHyperparamMixin(object):
     def _make_hyperparam_model(self, shape):
-        return LearnableDiagGauss(shape, n_dims, self.parameters.declare)
+        return LearnableDiagGauss(shape, shape[-1], self.parameters.declare)
 
 
 class PmpPriorMixin(object):
