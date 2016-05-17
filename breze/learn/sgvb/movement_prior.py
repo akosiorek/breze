@@ -25,8 +25,8 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
     def __init__(self, n_basis, mean, var, u, rng=None, width=1):
 
         self.n_basis = n_basis
-        mean, u = (self._transform(i) for i in (mean, u))
         self.width = width
+        mean, u = (self._transform(i) for i in (mean, u))
         super(ProbabilisticMovementPrimitive, self).__init__(mean, var, u, rng)
 
     def _transform(self, x):
