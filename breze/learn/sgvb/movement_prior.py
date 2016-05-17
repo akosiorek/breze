@@ -22,10 +22,11 @@ from storn import StochasticRnn
 
 class ProbabilisticMovementPrimitive(RankOneGauss):
 
-    def __init__(self, n_basis, mean, var, u, rng=None):
+    def __init__(self, n_basis, mean, var, u, rng=None, width=1):
 
         self.n_basis = n_basis
         mean, u = (self._transform(i) for i in (mean, u))
+        self.width = width
         super(ProbabilisticMovementPrimitive, self).__init__(mean, var, u, rng)
 
     def _transform(self, x):
@@ -37,7 +38,7 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
         timesteps = T.arange(0, 1, 1. / n_time_steps)
 
         def times_basis(tens, t, b):
-            basis = T.exp(-(t - b) ** 2 / 2)
+            basis = T.exp(-(t - b) ** 2 / (2 * self.width))
             return T.dot(basis / basis.sum(), tens)
 
         x, _ = theano.scan(times_basis, sequences=[x, timesteps], non_sequences=indices)
@@ -66,6 +67,7 @@ class DiagGaussHyperparamMixin(object):
 
 class PmpPriorMixin(object):
     kl_samples = 1
+    pmp_width = 1
 
     def make_prior(self, recog_sample, recog=None):
 
@@ -90,7 +92,7 @@ class PmpPriorMixin(object):
         var = sample[:, :, n_mean_par:] ** 2
         u = mean
 
-        return ProbabilisticMovementPrimitive(self.n_bases, mean, var, u)
+        return ProbabilisticMovementPrimitive(self.n_bases, mean, var, u, width=self.pmp_width)
 
     def _kl_expectation(self, kl_estimate):
         if self.kl_samples == 1:
