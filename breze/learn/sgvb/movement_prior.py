@@ -68,7 +68,7 @@ class PmpPriorMixin(object):
         shape = (1, n_samples, n_dims)
 
         self.hyperprior = NormalGauss(shape)
-        # self.hyperparam_model = NormalGauss(shape)
+        self.hyperparam_model = NormalGauss(shape)
 
         rng = T.shared_randomstreams.RandomStreams()
         # from theano.sandbox.cuda.rng_curand import CURAND_RandomStreams as RandomStreams
@@ -153,7 +153,7 @@ class PmpRnn(StochasticRnn):
         # except AttributeError as err:
         #     print err.message, 'Skipping KL.'
 
-        loss += self.kl / 100 + self.rec_loss
+        loss += self.kl + self.rec_loss
 
         UnsupervisedModel.__init__(self, inpt=inpt,
                                    output=output,

@@ -18,11 +18,12 @@ def gauss_gauss_kl(p, q):
 
 
 def diaggauss_affinegauss_kl(p, q):
-    return inter_gauss_kl(p.mean, p.var, q.mean, q.var, u2=q.u, eta2=q.eta)
+    return inter_gauss_kl(p.mean, p.var, q.mean, q.var, u2=q.u, eta2=q.eta,
+                          var_offset=1e-4, var_offset_=1e-4)
 
 
-def affinegauss_normalgauss_kl(p, q):
-    return inter_gauss_kl(p.mean, p.var, q.mean, q.var, var_offset=1e-4, u1=p.u, eta1=p.eta)
+# def affinegauss_normalgauss_kl(p, q):
+#     return inter_gauss_kl(p.mean, p.var, q.mean, q.var, var_offset=1e-4, u1=p.u, eta1=p.eta)
 
 
 def bern_bern_kl(p, q):
@@ -42,7 +43,7 @@ kl_table = {
     (DiagGauss, NormalGauss): gauss_normalgauss_kl,
     (DiagGauss, DiagGauss): gauss_gauss_kl,
     (DiagGauss, RankOneGauss): diaggauss_affinegauss_kl,
-    (RankOneGauss, NormalGauss): affinegauss_normalgauss_kl,
+    # (RankOneGauss, NormalGauss): affinegauss_normalgauss_kl,
     (Bernoulli,  Bernoulli): bern_bern_kl
 }
 

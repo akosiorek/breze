@@ -110,7 +110,7 @@ class RankOneGauss(Distribution):
         C factorised as C = FF^T according to Rezende and Wierstra +
         Sherman-Morrison formula"""
 
-    def __init__(self, mean, var, u, rng=None, eps=1e-16):
+    def __init__(self, mean, var, u, rng=None, eps=1e-4):
         self.mean = mean
 
         # This allows to use var with shape (1, 1, n)
@@ -138,8 +138,8 @@ class RankOneGauss(Distribution):
 
     def sample(self, epsilon=None):
         mean_flat = assert_no_time(self.mean)
-        var_flat = assert_no_time(self.var)
-        u_flat = assert_no_time(self.u) + self.eps
+        var_flat = assert_no_time(self.var) + self.eps
+        u_flat = assert_no_time(self.u)
 
         if epsilon is None:
             noise = self.rng.normal(size=mean_flat.shape)
