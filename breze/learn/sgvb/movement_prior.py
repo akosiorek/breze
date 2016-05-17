@@ -55,6 +55,16 @@ import sys
 sys.setrecursionlimit(50000)
 
 
+def NormalGaussHyperparamMixin(object):
+    def _make_hyperparam_model(self, shape):
+        return NormalGauss(shape)
+
+
+def DiagGaussHyperparamMixin(object):
+    def _make_hyperparam_model(self, shape):
+        return LearnableDiagGauss(shape, n_dims, self.parameters.declare)
+
+
 class PmpPriorMixin(object):
     kl_samples = 1
 
@@ -68,28 +78,20 @@ class PmpPriorMixin(object):
         shape = (1, n_samples, n_dims)
 
         self.hyperprior = NormalGauss(shape)
-        self.hyperparam_model = NormalGauss(shape)
+        self.hyperparam_model = self._make_hyperparam_model(shape)
 
         rng = T.shared_randomstreams.RandomStreams()
-        # from theano.sandbox.cuda.rng_curand import CURAND_RandomStreams as RandomStreams
-        # rng = RandomStreams(0)
         self.noises = [rng.normal(size=shape[1:]) for _ in xrange(self.kl_samples)]
-        self.hyperparam_model = LearnableDiagGauss(shape, n_dims,
-                                                   self.parameters.declare)
-
         sample = self.hyperparam_model.sample(epsilon=self.noises[0])
 
         # make the sample available for all timesteps
         sample = T.tile(sample, (n_timesteps, 1, 1), ndim=len(shape))
 
         mean = sample[:, :, :n_mean_par]
-        # mean = sample[:, :, :self.n_latent]
         var = sample[:, :, n_mean_par:] ** 2
         u = mean
 
         return ProbabilisticMovementPrimitive(self.n_bases, mean, var, u)
-        # return DiagGauss(mean, var)
-        # return NormalGauss(mean.shape)
 
     def _kl_expectation(self, kl_estimate):
         if self.kl_samples == 1:
