@@ -55,12 +55,12 @@ import sys
 sys.setrecursionlimit(50000)
 
 
-def NormalGaussHyperparamMixin(object):
+class NormalGaussHyperparamMixin(object):
     def _make_hyperparam_model(self, shape):
         return NormalGauss(shape)
 
 
-def DiagGaussHyperparamMixin(object):
+class DiagGaussHyperparamMixin(object):
     def _make_hyperparam_model(self, shape):
         return LearnableDiagGauss(shape, n_dims, self.parameters.declare)
 
