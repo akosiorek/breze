@@ -32,7 +32,6 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
 
         n_time_steps, n_samples, n_dims = x.shape
         x = wild_reshape(x, (n_time_steps, n_samples, self.n_basis, -1))
-        # x = x[:, :, 0, :]
 
         indices = T.constant(np.linspace(0, 1, self.n_basis), dtype=theano.config.floatX)
         timesteps = T.arange(0, 1, 1. / n_time_steps)
@@ -148,12 +147,12 @@ class PmpRnn(StochasticRnn):
         # It is the same for every sample and every timestep
         # TODO: scale hyper_kl
         loss = 0
-        # try:
-        #     self.hyper_kl = kl_div(self.hyperparam_model, self.hyperprior)[0, 0, :]
-        #     self.hyper_kl = self.hyper_kl.sum() / self.kl_sample_wise.shape.prod()
-        #     loss += self.hyper_kl
-        # except AttributeError as err:
-        #     print err.message, 'Skipping KL.'
+        try:
+            self.hyper_kl = kl_div(self.hyperparam_model, self.hyperprior)[0, 0, :]
+            self.hyper_kl = self.hyper_kl.sum() / self.kl_sample_wise.shape.prod()
+            loss += self.hyper_kl
+        except AttributeError as err:
+            print err.message, 'Skipping KL.'
 
         loss += self.kl + self.rec_loss
 

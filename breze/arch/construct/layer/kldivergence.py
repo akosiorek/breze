@@ -39,7 +39,12 @@ def bern_bern_kl(p, q):
            (1 - p_rate) * T.log((1 - p_rate)/(1 - q_rate)))
 
 
+def normalgauss_normalgauss_kl(p, q):
+    return T.zeros_like(p.mean)
+
+
 kl_table = {
+    (NormalGauss, NormalGauss): normalgauss_normalgauss_kl,
     (DiagGauss, NormalGauss): gauss_normalgauss_kl,
     (DiagGauss, DiagGauss): gauss_gauss_kl,
     (DiagGauss, RankOneGauss): diaggauss_affinegauss_kl,

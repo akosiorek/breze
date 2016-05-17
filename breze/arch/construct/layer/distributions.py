@@ -128,8 +128,8 @@ class RankOneGauss(Distribution):
         super(RankOneGauss, self).__init__(rng)
 
     def _make_eta(self):
-        var_flat = assert_no_time(self.var)
-        u_flat = assert_no_time(self.u) + self.eps
+        var_flat = assert_no_time(self.var) + self.eps
+        u_flat = assert_no_time(self.u)
         eta, _ = theano.scan(lambda u, v: 1 / ((u ** 2 / v).sum() + 1),
                              sequences=[u_flat, var_flat])
 
