@@ -164,10 +164,10 @@ class PmpRnn(StochasticRnn):
             self.iter = self.parameters.declare((1,))
             arg = T.concatenate([T.ones_like(self.iter), 0.01 + self.iter / 10000.0])
             self.alpha = T.min(arg)
-            self.exprs['true_loss'] = loss + self.kl + self.rec_loss
         else:
             self.alpha = 1
 
+        self.true_loss = loss + self.kl + self.rec_loss
         loss += self.kl + self.alpha * self.rec_loss
 
         UnsupervisedModel.__init__(self, inpt=inpt,
@@ -177,6 +177,7 @@ class PmpRnn(StochasticRnn):
                                    imp_weight=self.imp_weight)
 
         self.transform_expr_name = None
+        self.exprs['true_loss'] = self.true_loss
 
     def initialize(self,
                    par_std=1, par_std_affine=None, par_std_rec=None,
