@@ -162,7 +162,8 @@ class PmpRnn(StochasticRnn):
 
         if self.annealing:
             self.iter = self.parameters.declare((1,))
-            self.alpha = T.min([1, 0.01 + self.iter / 10000.0])
+            arg = T.concatenate([T.ones_like(self.iter), 0.01 + self.iter / 10000.0])
+            self.alpha = T.min(arg)
             self.exprs['true_loss'] = loss + self.kl + self.rec_loss
         else:
             self.alpha = 1
