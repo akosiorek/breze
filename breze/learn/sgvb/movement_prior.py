@@ -51,7 +51,7 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
 class LegendreProbabilisticMovementPrimitive(ProbabilisticMovementPrimitive):
 
     def _indices(self):
-        from gaussian_roots import import roots
+        from gaussian_roots import roots
         return 0.5 * np.asarray(roots, dtype=theano.config.floatX) + 0.5
 
 
