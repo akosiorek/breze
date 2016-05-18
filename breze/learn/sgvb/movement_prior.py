@@ -175,7 +175,8 @@ class PmpRnn(StochasticRnn):
 
         if self.annealing:
             self.iter = self.parameters.declare((1,))
-            arg = T.concatenate([T.ones_like(self.iter), 0.01 + self.iter / float(anneal_iters)])
+            anneal_rate = 0.01 + self.iter / float(self.anneal_iters)
+            arg = T.concatenate([T.ones_like(self.iter), anneal_rate])
             self.alpha = T.min(arg)
         else:
             self.alpha = 1
