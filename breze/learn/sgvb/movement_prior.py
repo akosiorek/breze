@@ -52,7 +52,7 @@ class LegendreProbabilisticMovementPrimitive(ProbabilisticMovementPrimitive):
 
     def _indices(self):
         from gaussian_roots import roots
-        return 0.5 * np.asarray(roots, dtype=theano.config.floatX) + 0.5
+        return 0.5 * np.asarray(roots[self.n_basis], dtype=theano.config.floatX) + 0.5
 
 
 # hyper-prior - NormalGauss
