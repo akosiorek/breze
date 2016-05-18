@@ -79,6 +79,7 @@ class PmpPriorMixin(object):
     kl_samples = 1
     pmp_width = 1
     pmp_class = ProbabilisticMovementPrimitive
+
     def make_prior(self, recog_sample, recog=None):
 
         n_timesteps, n_samples, _ = recog_sample.shape
@@ -90,7 +91,6 @@ class PmpPriorMixin(object):
 
         self.hyperprior = NormalGauss(shape)
         self.hyperparam_model = self._make_hyperparam_model(shape)
-
 
         rng = getattr(self, 'rng', T.shared_randomstreams.RandomStreams())
         self.noises = [rng.normal(size=shape[1:]) for _ in xrange(self.kl_samples)]
@@ -116,9 +116,11 @@ class PmpPriorMixin(object):
 
 class PmpRnn(StochasticRnn):
     annealing = False
+    anneal_iters = 10000
 
     def anneal(self, n_iter):
-        self.parameters[self.iter] = n_iter
+        if self.annealing:
+            self.parameters[self.iter] = n_iter
 
     def _init_exprs(self):
         inpt, self.imp_weight = self._make_start_exprs()
@@ -173,7 +175,7 @@ class PmpRnn(StochasticRnn):
 
         if self.annealing:
             self.iter = self.parameters.declare((1,))
-            arg = T.concatenate([T.ones_like(self.iter), 0.01 + self.iter / 10000.0])
+            arg = T.concatenate([T.ones_like(self.iter), 0.01 + self.iter / float(anneal_iters)])
             self.alpha = T.min(arg)
         else:
             self.alpha = 1
