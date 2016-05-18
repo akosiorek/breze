@@ -34,7 +34,7 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
         n_time_steps, n_samples, n_dims = x.shape
         x = wild_reshape(x, (n_time_steps, n_samples, self.n_basis, -1))
 
-        indices = T.constant(np.linspace(0, 1, self.n_basis), dtype=theano.config.floatX)
+        indices = self._indices()
         timesteps = T.arange(0, 1, 1. / n_time_steps)
 
         def times_basis(tens, t, b):
@@ -43,6 +43,16 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
 
         x, _ = theano.scan(times_basis, sequences=[x, timesteps], non_sequences=indices)
         return x
+
+    def _indices(self):
+        return T.constant(np.linspace(0, 1, self.n_basis), dtype=theano.config.floatX)
+
+
+class LegendreProbabilisticMovementPrimitive(ProbabilisticMovementPrimitive):
+
+    def _indices(self):
+        from gaussian_roots import import roots
+        return 0.5 * np.asarray(roots, dtype=theano.config.floatX) + 0.5
 
 
 # hyper-prior - NormalGauss
@@ -68,7 +78,7 @@ class DiagGaussHyperparamMixin(object):
 class PmpPriorMixin(object):
     kl_samples = 1
     pmp_width = 1
-
+    pmp_class = ProbabilisticMovementPrimitive
     def make_prior(self, recog_sample, recog=None):
 
         n_timesteps, n_samples, _ = recog_sample.shape
@@ -81,7 +91,8 @@ class PmpPriorMixin(object):
         self.hyperprior = NormalGauss(shape)
         self.hyperparam_model = self._make_hyperparam_model(shape)
 
-        rng = T.shared_randomstreams.RandomStreams()
+
+        rng = getattr(self, 'rng', T.shared_randomstreams.RandomStreams())
         self.noises = [rng.normal(size=shape[1:]) for _ in xrange(self.kl_samples)]
         sample = self.hyperparam_model.sample(epsilon=self.noises[0])
 
@@ -92,7 +103,7 @@ class PmpPriorMixin(object):
         var = sample[:, :, n_mean_par:] ** 2
         u = mean
 
-        return ProbabilisticMovementPrimitive(self.n_bases, mean, var, u, width=self.pmp_width)
+        return self.pmp_class(self.n_bases, mean, var, u, width=self.pmp_width)
 
     def _kl_expectation(self, kl_estimate):
         if self.kl_samples == 1:
