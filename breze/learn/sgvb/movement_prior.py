@@ -9,7 +9,7 @@ from breze.arch.construct.layer.kldivergence import kl_div
 from breze.arch.construct.sgvb import (
     VariationalAutoEncoder as _VariationalAutoEncoder)
 from breze.arch.construct.neural.base import wild_reshape
-from breze.learn.base import UnsupervisedModel
+from breze.learn.base import UnsupervisedModel, cast_array_to_local_type
 
 from base import GenericVariationalAutoEncoder
 from prior import LearnableDiagGauss
@@ -22,19 +22,22 @@ from storn import StochasticRnn
 
 class ProbabilisticMovementPrimitive(RankOneGauss):
 
-    def __init__(self, n_basis, mean, var, u, rng=None, width=1):
+    def __init__(self, n_basis, mean, var, u, rng=None, width=1, eps=None):
 
         self.n_basis = n_basis
         self.width = width
         mean, u = (self._transform(i) for i in (mean, u))
-        super(ProbabilisticMovementPrimitive, self).__init__(mean, var, u, rng)
+        if eps is not None:
+            super(ProbabilisticMovementPrimitive, self).__init__(mean, var, u, rng, eps)
+        else:
+            super(ProbabilisticMovementPrimitive, self).__init__(mean, var, u, rng)
 
     def _transform(self, x):
 
         n_time_steps, n_samples, n_dims = x.shape
         x = wild_reshape(x, (n_time_steps, n_samples, self.n_basis, -1))
 
-        indices = self._indices()
+        indices = T.constant(self._indices(), 'basis_time_indices', dtype=theano.config.floatX)
         timesteps = T.arange(0, 1, 1. / n_time_steps)
 
         def times_basis(tens, t, b):
@@ -45,14 +48,14 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
         return x
 
     def _indices(self):
-        return T.constant(np.linspace(0, 1, self.n_basis), dtype=theano.config.floatX)
+        return np.linspace(0, 1, self.n_basis)
 
 
 class LegendreProbabilisticMovementPrimitive(ProbabilisticMovementPrimitive):
 
     def _indices(self):
         from gaussian_roots import roots
-        return 0.5 * np.asarray(roots[self.n_basis], dtype=theano.config.floatX) + 0.5
+        return 0.5 * np.asarray(roots[self.n_basis]) + 0.5
 
 
 # hyper-prior - NormalGauss
@@ -120,7 +123,9 @@ class PmpRnn(StochasticRnn):
 
     def anneal(self, n_iter):
         if self.annealing:
-            self.parameters[self.iter] = n_iter
+            old_val = self.alpha.eval()[0]
+            self.iter.set_value(np.asarray([n_iter]))
+            return old_val, self.alpha.eval()[0]
 
     def _init_exprs(self):
         inpt, self.imp_weight = self._make_start_exprs()
@@ -174,8 +179,8 @@ class PmpRnn(StochasticRnn):
             print err.message, 'Skipping KL.'
 
         if self.annealing:
-            self.iter = self.parameters.declare((1,))
-            anneal_rate = 0.01 + self.iter / float(self.anneal_iters)
+            self.iter = theano.shared(np.zeros(1, dtype=theano.config.floatX))
+            anneal_rate = 0.01 + self.iter / self.anneal_iters
             arg = T.concatenate([T.ones_like(self.iter), anneal_rate])
             self.alpha = T.min(arg)
         else:
@@ -209,6 +214,3 @@ class PmpRnn(StochasticRnn):
             self.parameters[hyperparam.raw_var] = 1
         except AttributeError as err:
             print err.message, 'Skipping init.'
-
-        if self.annealing:
-            self.parameters[self.iter] = 0
