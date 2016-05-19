@@ -27,6 +27,7 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
         self.n_basis = n_basis
         self.width = width
         mean, u = (self._transform(i) for i in (mean, u))
+        u /= u.max()
         if eps is not None:
             super(ProbabilisticMovementPrimitive, self).__init__(mean, var, u, rng, eps)
         else:
@@ -39,12 +40,13 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
 
         indices = T.constant(self._indices(), 'basis_time_indices', dtype=theano.config.floatX)
         timesteps = T.arange(0, 1, 1. / n_time_steps)
+        dt = timesteps[1] - timesteps[0]
 
-        def times_basis(tens, t, b):
+        def times_basis(tens, t, b, dt):
             basis = T.exp(-(t - b) ** 2 / (2 * self.width))
             return T.dot(basis / basis.sum(), tens)
 
-        x, _ = theano.scan(times_basis, sequences=[x, timesteps], non_sequences=indices)
+        x, _ = theano.scan(times_basis, sequences=[x, timesteps], non_sequences=[indices, dt])
         return x
 
     def _indices(self):
@@ -92,7 +94,14 @@ class PmpPriorMixin(object):
         # we sample once per timeseries
         shape = (1, n_samples, n_dims)
 
-        self.hyperprior = NormalGauss(shape)
+        # self.hyperprior = NormalGauss(shape)
+
+        #   set hypermean to 0 for mean and to 1 for variance, while keeping hypervar = 1 for all
+        hyperprior_var = T.ones(shape)
+        hypermean_mean = T.zeros((1, n_samples, n_mean_par))
+        hypervar_mean = T.ones((1, n_samples, self.n_latent))
+        hyperprior_mean = T.concatenate([hypermean_mean, hypervar_mean], axis=len(shape)-1)
+        self.hyperprior = DiagGauss(hyperprior_mean, hyperprior_var)
         self.hyperparam_model = self._make_hyperparam_model(shape)
 
         rng = getattr(self, 'rng', T.shared_randomstreams.RandomStreams())
@@ -115,6 +124,14 @@ class PmpPriorMixin(object):
         n0 = self.noises[0]
         kls = [theano.clone(kl_estimate, {n0: n}) for n in self.noises]
         return sum(kls) / self.kl_samples
+
+    def report(self):
+        mean, var = self.hyperparam_model.raw_mean, self.hyperparam_model.raw_var
+        mean, var = self.parameters[mean], self.parameters[var]**2
+        means = ('%.4f' % s for s in (mean.min(), mean.mean(), mean.max()))
+        vars = ('%.4f' % s for s in (var.min(), var.mean(), var.max()))
+
+        return 'hyperior mean: {};\tvar: {}'.format(', '.join(means), ', '.join(vars))
 
 
 class PmpRnn(StochasticRnn):
@@ -168,12 +185,12 @@ class PmpRnn(StochasticRnn):
         self.kl = self.kl_sample_wise.mean()
 
         # Create the KL divergence between model and prior for hyperparams.
-        # It is the same for every sample and every timestep
-        # TODO: scale hyper_kl
+        # It is the same for every sample and every timestep, so take once instead
+        #  of averaging
         loss = 0
         try:
-            self.hyper_kl = kl_div(self.hyperparam_model, self.hyperprior)[0, 0, :]
-            self.hyper_kl = self.hyper_kl.sum() / self.kl_sample_wise.shape.prod()
+            self.hyper_kl_coord_wise = kl_div(self.hyperparam_model, self.hyperprior)[0, 0, :]
+            self.hyper_kl = self.hyper_kl_coord_wise.sum()
             loss += self.hyper_kl
         except AttributeError as err:
             print err.message, 'Skipping KL.'
@@ -214,7 +231,8 @@ class PmpRnn(StochasticRnn):
 
         try:
             hyperparam = self.hyperparam_model
-            self.parameters[hyperparam.raw_mean] = 0
+            self.parameters[hyperparam.raw_mean][:-self.n_latent] = 0
+            self.parameters[hyperparam.raw_mean][-self.n_latent:] = 1
             self.parameters[hyperparam.raw_var] = 1
         except AttributeError as err:
             print err.message, 'Skipping init.'
