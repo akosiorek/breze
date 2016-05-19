@@ -123,9 +123,9 @@ class PmpRnn(StochasticRnn):
 
     def anneal(self, n_iter):
         if self.annealing:
-            old_val = self.alpha.eval()[0]
+            old_val = self.alpha.eval()
             self.iter.set_value(np.asarray([n_iter]))
-            return old_val, self.alpha.eval()[0]
+            return old_val, self.alpha.eval()
 
     def _init_exprs(self):
         inpt, self.imp_weight = self._make_start_exprs()
