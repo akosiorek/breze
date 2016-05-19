@@ -124,7 +124,7 @@ class PmpRnn(StochasticRnn):
     def anneal(self, n_iter):
         if self.annealing:
             old_val = self.alpha.eval()
-            self.iter.set_value(np.asarray([n_iter]))
+            self.iter.set_value(np.asarray([n_iter], dtype=theano.config.floatX))
             return old_val, self.alpha.eval()
 
     def _init_exprs(self):
@@ -178,13 +178,7 @@ class PmpRnn(StochasticRnn):
         except AttributeError as err:
             print err.message, 'Skipping KL.'
 
-        if self.annealing:
-            self.iter = theano.shared(np.zeros(1, dtype=theano.config.floatX))
-            anneal_rate = 0.01 + self.iter / float(self.anneal_iters)
-            arg = T.concatenate([T.ones_like(self.iter), anneal_rate])
-            self.alpha = T.min(arg)
-        else:
-            self.alpha = 1
+        self.alpha = self._make_anneal()
 
         self.true_loss = loss + self.kl + self.rec_loss
         loss += self.kl + self.alpha * self.rec_loss
@@ -197,6 +191,16 @@ class PmpRnn(StochasticRnn):
 
         self.transform_expr_name = None
         self.exprs['true_loss'] = self.true_loss
+
+    def _make_anneal(self):
+        if self.annealing:
+            self.iter = theano.shared(np.zeros(1, dtype=theano.config.floatX))
+            anneal_rate = 0.01 + self.iter / float(self.anneal_iters)
+            arg = T.concatenate([T.ones_like(self.iter), anneal_rate])
+            alpha = T.min(arg)
+        else:
+            alpha = 1
+        return alpha
 
     def initialize(self,
                    par_std=1, par_std_affine=None, par_std_rec=None,
