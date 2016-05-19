@@ -180,7 +180,7 @@ class PmpRnn(StochasticRnn):
 
         if self.annealing:
             self.iter = theano.shared(np.zeros(1, dtype=theano.config.floatX))
-            anneal_rate = 0.01 + self.iter / self.anneal_iters
+            anneal_rate = 0.01 + self.iter / theano.config.floatX(self.anneal_iters)
             arg = T.concatenate([T.ones_like(self.iter), anneal_rate])
             self.alpha = T.min(arg)
         else:
