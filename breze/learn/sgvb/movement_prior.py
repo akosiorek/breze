@@ -27,7 +27,7 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
         self.n_basis = n_basis
         self.width = width
         mean, u = (self._transform(i) for i in (mean, u))
-        u /= u.max()
+        # u /= u.max()
         if eps is not None:
             super(ProbabilisticMovementPrimitive, self).__init__(mean, var, u, rng, eps)
         else:
@@ -184,21 +184,33 @@ class PmpRnn(StochasticRnn):
 
         self.kl = self.kl_sample_wise.mean()
 
+        loss = self.kl
+        annealed_loss = self.rec_loss
+
         # Create the KL divergence between model and prior for hyperparams.
         # It is the same for every sample and every timestep, so take once instead
         #  of averaging
-        loss = 0
+        self.alpha = self._make_anneal()
         try:
             self.hyper_kl_coord_wise = kl_div(self.hyperparam_model, self.hyperprior)[0, 0, :]
+            if self.use_imp_weight:
+                self.hyper_kl_coord_wise *= imp_weight
+
             self.hyper_kl = self.hyper_kl_coord_wise.sum()
+
+            latent_sample = self.vae.recog_sample
+            latent_rec_loss = self.vae.prior.nll(latent_sample)
+            self.latent_rec_loss_sample_wise = latent_rec_loss.sum(axis=n_dim - 1)
+            self.latent_rec_loss = self.latent_rec_loss_sample_wise.mean()
+
             loss += self.hyper_kl
+            annealed_loss += self.latent_rec_loss
+
         except AttributeError as err:
-            print err.message, 'Skipping KL.'
+            print err.message, 'Skipping Hyperior-related loss.'
 
-        self.alpha = self._make_anneal()
-
-        self.true_loss = loss + self.kl + self.rec_loss
-        loss += self.kl + self.alpha * self.rec_loss
+        true_loss = loss + annealed_loss
+        loss += self.alpha * annealed_loss
 
         UnsupervisedModel.__init__(self, inpt=inpt,
                                    output=output,
@@ -207,7 +219,7 @@ class PmpRnn(StochasticRnn):
                                    imp_weight=self.imp_weight)
 
         self.transform_expr_name = None
-        self.exprs['true_loss'] = self.true_loss
+        self.exprs['true_loss'] = true_loss
 
     def _make_anneal(self):
         if self.annealing:
