@@ -146,7 +146,7 @@ class RankOneGauss(Distribution):
         else:
             noise = epsilon
 
-        def rank_one_perturb(v, u, n):
+        def times_cov_factor(v, u, n):
             eta = 1 / ((u ** 2 / v).sum() + 1)
             a = (1 - T.sqrt(eta)) / (u ** 2 / v).sum()
             u = u[np.newaxis, :]
@@ -155,8 +155,10 @@ class RankOneGauss(Distribution):
 
             n *= T.sqrt(v)
             return n + (alpha * T.dot(u.T, x).dot(n)).squeeze()
+            # D = T.diag(T.sqrt(v.flatten()))
+            # return (D + D.dot(alpha * T.dot(u.T, x))).dot(n).squeeze()
 
-        sample, _ = theano.scan(rank_one_perturb,
+        sample, _ = theano.scan(times_cov_factor,
                                 sequences=[var_flat, u_flat, noise])
 
         sample += mean_flat
@@ -165,6 +167,34 @@ class RankOneGauss(Distribution):
             return recover_time(sample, self.mean.shape[0])
         else:
             return sample
+
+    def nll(self, X, inpt=None):
+        var_flat = assert_no_time(self.var) + self.eps
+        u_flat = assert_no_time(self.u)
+        r_flat = assert_no_time(X - self.mean)
+        eta_flat = assert_no_time(self.eta)
+
+        def times_inv_cov_factor(v, u, r):
+            eta = 1 / ((u ** 2 / v).sum() + 1)
+            a = (1 - T.sqrt(eta)) / (u ** 2 / v).sum()
+            u = u[np.newaxis, :]
+            x = a * u / v
+
+            D = T.diag(1/T.sqrt(v.flatten()))
+            return (D - T.dot(x.T, u).dot(D)).T.dot(r)
+
+        weighted_squares, _ = theano.scan(times_inv_cov_factor,
+                                sequences=[var_flat, u_flat, r_flat])
+
+        dims = var_flat.shape[-1]
+        normalization = T.log(2 * np.pi) - T.log(eta_flat) / dims + T.log(var_flat)
+        nll = 0.5 * (weighted_squares ** 2 + normalization)
+
+        if self.mean.ndim == 3:
+            return recover_time(nll, self.mean.shape[0])
+        else:
+            return nll
+        return nll
 
 
 class Bernoulli(Distribution):
