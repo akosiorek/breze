@@ -84,23 +84,27 @@ class PmpPriorMixin(object):
     kl_samples = 1
     pmp_width = 1
     pmp_class = ProbabilisticMovementPrimitive
+    separate_u_mean = False
+    fixed_var = False
 
     def make_prior(self, recog_sample, recog=None):
 
         n_timesteps, n_samples, _ = recog_sample.shape
         n_mean_par = self.n_latent * self.n_bases
-        n_dims = n_mean_par + self.n_latent
+        n_u_par = n_mean_par if self.separate_u_mean else 0
+        n_var_par = self.n_latent if not self.fixed_var else 0
+        n_dims = n_mean_par + n_u_par + n_var_par
 
         # we sample once per timeseries
         shape = (1, n_samples, n_dims)
 
-        # self.hyperprior = NormalGauss(shape)
-
         #   set hypermean to 0 for mean and to 1 for variance, while keeping hypervar = 1 for all
         hyperprior_var = T.ones(shape)
-        hypermean_mean = T.zeros((1, n_samples, n_mean_par))
-        hypervar_mean = T.ones((1, n_samples, self.n_latent))
+        hypermean_mean = T.zeros((1, n_samples, n_mean_par + n_u_par))
+        # if not self.fixed_var:
+        hypervar_mean = T.ones((1, n_samples, n_var_par))
         hyperprior_mean = T.concatenate([hypermean_mean, hypervar_mean], axis=len(shape)-1)
+
         self.hyperprior = DiagGauss(hyperprior_mean, hyperprior_var)
         self.hyperparam_model = self._make_hyperparam_model(shape)
 
@@ -112,8 +116,16 @@ class PmpPriorMixin(object):
         sample = T.tile(sample, (n_timesteps, 1, 1), ndim=len(shape))
 
         mean = sample[:, :, :n_mean_par]
-        var = sample[:, :, n_mean_par:] ** 2
-        u = mean
+        if self.separate_u_mean:
+            u = sample[:, :, n_mean_par:n_mean_par + n_u_par]
+        else:
+            u = mean
+
+        if not self.fixed_var:
+            var = sample[:, :, -n_var_par:] ** 2
+        else:
+            var = self.fixed_var * T.ones((1, n_samples, self.n_latent))
+            var = T.tile(var, (n_timesteps, 1, 1), ndim=len(shape))
 
         return self.pmp_class(self.n_bases, mean, var, u, width=self.pmp_width)
 
