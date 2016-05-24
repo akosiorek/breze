@@ -136,37 +136,52 @@ class RankOneGauss(Distribution):
         eta = wild_reshape(eta, (self.mean.shape[0], 1, -1))
         return recover_time(eta, self.mean.shape[0])
 
+    @staticmethod
+    def _times_cov_factor(v, u, n):
+        eta = 1 / ((u ** 2 / v).sum() + 1)
+        a = (1 - T.sqrt(eta)) / (u ** 2 / v).sum()
+        u = u[np.newaxis, :]
+        n = n[np.newaxis, :]
+        x = - a * u / v
+        alpha = - 1 / (1 + T.dot(x, u.T))
+        return (T.sqrt(v) * n + alpha * (T.sqrt(v) * n).dot(x.T.dot(u))).flatten()
+        # return n.dot(RankOneGauss._cov_factor(v, u).reshape((n.size, n.size)).T).flatten()
+
+    @staticmethod
+    def _cov_factor(v, u):
+        eta = 1 / ((u ** 2 / v).sum() + 1)
+        a = (1 - T.sqrt(eta)) / (u ** 2 / v).sum()
+        u = u[np.newaxis, :]
+        x = - a * u / v
+        alpha = - 1 / (1 + T.dot(x, u.T))
+        D = T.diag(T.sqrt(v).flatten())
+        I = T.eye(v.size)
+        return D.dot(I + alpha * x.T.dot(u))
+
+    @staticmethod
+    def _times_inv_cov_factor(v, u, r):
+        eta = 1 / ((u ** 2 / v).sum() + 1)
+        a = (1 - T.sqrt(eta)) / (u ** 2 / v).sum()
+        u = u[np.newaxis, :]
+        x = a * u / v
+        return (r - u.T.dot(x.dot(r))) / T.sqrt(v.flatten())
+
     def sample(self, epsilon=None):
-        mean_flat = assert_no_time(self.mean)
         var_flat = assert_no_time(self.var) + self.eps
         u_flat = assert_no_time(self.u)
 
         if epsilon is None:
-            noise = self.rng.normal(size=mean_flat.shape)
+            noise = self.rng.normal(size=var_flat.shape)
         else:
             noise = epsilon
 
-        def times_cov_factor(v, u, n):
-            eta = 1 / ((u ** 2 / v).sum() + 1)
-            a = (1 - T.sqrt(eta)) / (u ** 2 / v).sum()
-            u = u[np.newaxis, :]
-            x = - a * u / v
-            alpha = - 1 / (1 + T.dot(x, u.T))
-
-            n *= T.sqrt(v)
-            return n + (alpha * T.dot(u.T, x).dot(n)).squeeze()
-            # D = T.diag(T.sqrt(v.flatten()))
-            # return (D + D.dot(alpha * T.dot(u.T, x))).dot(n).squeeze()
-
-        sample, _ = theano.scan(times_cov_factor,
+        sample, _ = theano.scan(self._times_cov_factor,
                                 sequences=[var_flat, u_flat, noise])
 
-        sample += mean_flat
-
         if self.mean.ndim == 3:
-            return recover_time(sample, self.mean.shape[0])
-        else:
-            return sample
+            sample = recover_time(sample, self.mean.shape[0])
+
+        return sample + self.mean
 
     def nll(self, X, inpt=None):
         var_flat = assert_no_time(self.var) + self.eps
@@ -174,14 +189,7 @@ class RankOneGauss(Distribution):
         r_flat = assert_no_time(X - self.mean)
         eta_flat = assert_no_time(self.eta)
 
-        def times_inv_cov_factor(v, u, r):
-            eta = 1 / ((u ** 2 / v).sum() + 1)
-            a = (1 - T.sqrt(eta)) / (u ** 2 / v).sum()
-            u = u[np.newaxis, :]
-            x = a * u / v
-            return (r - u.T.dot(x.dot(r))) / T.sqrt(v.flatten())
-
-        weighted_squares, _ = theano.scan(times_inv_cov_factor,
+        weighted_squares, _ = theano.scan(self._times_inv_cov_factor,
                                 sequences=[var_flat, u_flat, r_flat])
 
         dims = var_flat.shape[-1]
