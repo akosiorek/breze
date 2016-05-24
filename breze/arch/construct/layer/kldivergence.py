@@ -18,8 +18,8 @@ def gauss_gauss_kl(p, q):
 
 
 def diaggauss_affinegauss_kl(p, q):
-    return inter_gauss_kl(p.mean, p.var, q.mean, q.var, u2=q.u, eta2=q.eta,
-                          var_offset=1e-4, var_offset_=1e-4)
+    return inter_gauss_kl(p.mean, p.var, q.mean, q.var, u2=q.u, eta2=q.eta)
+                          # , var_offset=1e-4, var_offset_=1e-4)
 
 
 # def affinegauss_normalgauss_kl(p, q):
