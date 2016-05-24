@@ -256,7 +256,8 @@ class PmpRnn(StochasticRnn):
         try:
             hyperparam = self.hyperparam_model
             self.parameters[hyperparam.raw_mean][:-self.n_latent] = 0
-            self.parameters[hyperparam.raw_mean][-self.n_latent:] = 1
+            if not hasattr(self, 'fixed_var') or not self.fixed_var:
+                self.parameters[hyperparam.raw_mean][-self.n_latent:] = 1
             self.parameters[hyperparam.raw_var] = 1
         except AttributeError as err:
             print err.message, 'Skipping init.'
