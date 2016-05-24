@@ -179,9 +179,7 @@ class RankOneGauss(Distribution):
             a = (1 - T.sqrt(eta)) / (u ** 2 / v).sum()
             u = u[np.newaxis, :]
             x = a * u / v
-
-            D = T.diag(1/T.sqrt(v.flatten()))
-            return (D - T.dot(x.T, u).dot(D)).T.dot(r)
+            return (r - u.T.dot(x.dot(r))) / T.sqrt(v.flatten())
 
         weighted_squares, _ = theano.scan(times_inv_cov_factor,
                                 sequences=[var_flat, u_flat, r_flat])

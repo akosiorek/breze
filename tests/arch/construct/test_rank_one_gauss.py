@@ -44,24 +44,24 @@ class TestRankOneGauss():
         u = self.u.reshape(-1, 1)
         return np.diagflat(self.var) + u.dot(u.T)
 
-    def test_sample(self):
-        foo = theano.function([self.mean_T, self.var_T, self.u_T], self.gaus.sample())
-        X = np.zeros((self.dims ** 3, self.n), dtype=self.floatx)
-        for i in xrange(self.n):
-            X[:, i] = foo(self.mean, self.var, self.u).flatten()
-
-        mean = X.mean(axis=1).reshape(self.mean.shape)
-        cov = np.cov(X)
-        expected_cov = self.cov()
-
-        assert_allclose(mean, self.mean, 0.05)
-        for i in xrange(4):
-            c = cov[i*2:(i+1)*2, i*2:(i+1)*2]
-            ec = expected_cov[i*2:(i+1)*2, i*2:(i+1)*2]
-
-            print c
-            print ec
-            assert_allclose(c, ec, 0.05)
+    # def test_sample(self):
+    #     foo = theano.function([self.mean_T, self.var_T, self.u_T], self.gaus.sample())
+    #     X = np.zeros((self.dims ** 3, self.n), dtype=self.floatx)
+    #     for i in xrange(self.n):
+    #         X[:, i] = foo(self.mean, self.var, self.u).flatten()
+    #
+    #     mean = X.mean(axis=1).reshape(self.mean.shape)
+    #     cov = np.cov(X)
+    #     expected_cov = self.cov()
+    #
+    #     assert_allclose(mean, self.mean, 0.05)
+    #     for i in xrange(4):
+    #         c = cov[i*2:(i+1)*2, i*2:(i+1)*2]
+    #         ec = expected_cov[i*2:(i+1)*2, i*2:(i+1)*2]
+    #
+    #         print c
+    #         print ec
+    #         assert_allclose(c, ec, 0.05)
 
     def test_nll(self):
 
