@@ -210,13 +210,13 @@ class PmpRnn(StochasticRnn):
 
             self.hyper_kl = self.hyper_kl_coord_wise.sum()
 
-            latent_sample = self.vae.recog_sample
-            latent_rec_loss = self.vae.prior.nll(latent_sample)
-            self.latent_rec_loss_sample_wise = latent_rec_loss.sum(axis=n_dim - 1)
-            self.latent_rec_loss = self.latent_rec_loss_sample_wise.mean()
+            # latent_sample = self.vae.recog_sample
+            # latent_rec_loss = self.vae.prior.nll(latent_sample)
+            # self.latent_rec_loss_sample_wise = latent_rec_loss.sum(axis=n_dim - 1)
+            # self.latent_rec_loss = self.latent_rec_loss_sample_wise.mean()
 
             loss += self.hyper_kl
-            annealed_loss += self.latent_rec_loss
+            # annealed_loss += self.latent_rec_loss
 
         except AttributeError as err:
             print err.message, 'Skipping Hyperior-related loss.'
