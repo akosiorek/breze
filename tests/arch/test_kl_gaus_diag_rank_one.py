@@ -14,8 +14,12 @@ from numpy import random, log, trace
 from numpy.linalg import inv, det
 from scipy.stats import multivariate_normal, entropy
 
-from breze.arch.construct.layer.kldivergence import kl_div
 from breze.arch.construct.layer.distributions import DiagGauss, RankOneGauss
+from breze.arch.component.misc import inter_gauss_kl
+
+
+def kl_div(p, q):
+    return inter_gauss_kl(p.mean, p.var, q.mean, q.var, u2=q.u, eta2=q.eta)
 
 
 def kl_gaussian(m1, cov1, m2, cov2):
