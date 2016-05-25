@@ -21,7 +21,10 @@ from breze.arch.construct.layer.distributions import DiagGauss, RankOneGauss
 def kl_gaussian(m1, cov1, m2, cov2):
     m12 = m1 - m2
     icov2 = inv(cov2)
-    kl = log(det(cov2)/det(cov1)) - cov2.shape[-1] + trace(cov1.dot(icov2)) + m12.dot(icov2).dot(m12)
+    kl = 0
+    kl += log(det(cov2)/det(cov1))
+    kl += - cov2.shape[-1] + trace(cov1.dot(icov2))
+    kl += m12.dot(icov2).dot(m12)
     return kl / 2
 
 
@@ -85,7 +88,7 @@ class TestDiagRankOneKL(TestCase):
         for i in xrange(self.shape[0]):
             for j in xrange(self.shape[1]):
                 pdfs = mvn_diag[i, j](samples[i, j].T), mvn_rank[i, j](samples[i, j].T)
-                approximate_kl += log(pdfs[0] / pdfs[1]).sum() / len(pdfs[0])
+                approximate_kl += log(pdfs[0] / pdfs[1]).mean()
         return approximate_kl
 
     def test_rank_zero_u_vs_diag(self):
@@ -115,11 +118,14 @@ class TestDiagRankOneKL(TestCase):
         diag_rank = theano.function(args,
                                     kl_div(self.diag_gaus, self.rank_one_gaus), on_unused_input='warn')
 
-        computed_kl = diag_rank(self.m1, self.v1, self.m1, self.v1, self.u).sum()
-        brute_kl = kl_gaussian_tensor(self.m1, self.v1, self.m1, self.v1, self.u)
-        approximate_kl = self._approximate_gauss_kl()
+        computed_kl = diag_rank(self.m1, self.v1, self.m2, self.v2, self.u).sum()
+        brute_kl = kl_gaussian_tensor(self.m1, self.v1, self.m2, self.v2, self.u)
+        # approximate_kl = self._approximate_gauss_kl()
+        # print approximate_kl
+        # assert_allclose(brute_kl, approximate_kl, 0.02)
 
-        print approximate_kl
-        assert_allclose(brute_kl, approximate_kl, 0.02)
-        assert_allclose(computed_kl, brute_kl, 0.02, err_msg='Computed KL is not quite right.')
+        # print 'computed kl:', computed_kl
+        # print 'true kl:', brute_kl
+        # print 'shape:', computed_kl.shape
+        assert_allclose(computed_kl, brute_kl, 0.02, err_msg='Computed KL = {} is incorrect'.format(computed_kl))
 
