@@ -22,9 +22,12 @@ from storn import StochasticRnn
 
 class ProbabilisticMovementPrimitive(RankOneGauss):
 
-    def __init__(self, n_basis, mean, var, u, rng=None, width=1, eps=None):
+    def __init__(self, n_basis, mean, var, u, rng=None, width=1, eps=None, parameters=None):
 
+        self.parameters = parameters
         self.n_basis = n_basis
+        if hasattr(self, '_width'):
+            width = self._width()
         self.width = width
         mean, u = (self._transform(i) for i in (mean, u))
         # u /= u.max()
@@ -38,7 +41,7 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
         n_time_steps, n_samples, n_dims = x.shape
         x = wild_reshape(x, (n_time_steps, n_samples, self.n_basis, -1))
 
-        indices = T.constant(self._indices(), 'basis_time_indices', dtype=theano.config.floatX)
+        self.indices = T.constant(self._indices(), 'basis_time_indices', dtype=theano.config.floatX)
         timesteps = T.arange(0, 1, 1. / n_time_steps)
         dt = timesteps[1] - timesteps[0]
 
@@ -46,11 +49,14 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
             basis = T.exp(-(t - b) ** 2 / (2 * self.width))
             return T.dot(basis / basis.sum(), tens)
 
-        x, _ = theano.scan(times_basis, sequences=[x, timesteps], non_sequences=[indices, dt])
+        x, _ = theano.scan(times_basis, sequences=[x, timesteps], non_sequences=[self.indices, dt])
         return x
 
     def _indices(self):
         return np.linspace(0, 1, self.n_basis)
+
+    def init(self):
+        pass
 
 
 class LegendreProbabilisticMovementPrimitive(ProbabilisticMovementPrimitive):
@@ -58,6 +64,20 @@ class LegendreProbabilisticMovementPrimitive(ProbabilisticMovementPrimitive):
     def _indices(self):
         from gaussian_roots import roots
         return 0.5 * np.asarray(roots[self.n_basis]) + 0.5
+
+
+class FullyLearnablePMP(ProbabilisticMovementPrimitive):
+
+    def _width(self):
+        return self.parameters.declare(self.n_basis)
+
+    def _indices(self):
+        return self.parameters.declare(self.n_basis)
+
+    def init(self):
+        self.parameters[self.width] = 0.2
+        self.parameters[self._indices] = np.linspace(0, 1, self.n_basis)
+
 
 
 # hyper-prior - NormalGauss
@@ -127,7 +147,7 @@ class PmpPriorMixin(object):
             var = self.fixed_var * T.ones((1, n_samples, self.n_latent))
             var = T.tile(var, (n_timesteps, 1, 1), ndim=len(shape))
 
-        return self.pmp_class(self.n_bases, mean, var, u, width=self.pmp_width)
+        return self.pmp_class(self.n_bases, mean, var, u, width=self.pmp_width, declare=self.parameters.declare)
 
     def _kl_expectation(self, kl_estimate):
         if self.kl_samples == 1:
@@ -200,15 +220,16 @@ class PmpRnn(StochasticRnn):
         annealed_loss = self.rec_loss
 
         # Create the KL divergence between model and prior for hyperparams.
-        # It is the same for every sample and every timestep, so take once instead
+        # It is the same for every timestep, so take once instead
         #  of averaging
         self.alpha = self._make_anneal()
         try:
-            self.hyper_kl_coord_wise = kl_div(self.hyperparam_model, self.hyperprior)[0, 0, :]
+            self.hyper_kl_coord_wise = kl_div(self.hyperparam_model, self.hyperprior)[[0], :, :]
             if self.use_imp_weight:
                 self.hyper_kl_coord_wise *= imp_weight
 
-            self.hyper_kl = self.hyper_kl_coord_wise.sum()
+            self.hyper_kl_sample_wise = self.hyper_kl_coord_wise.sum(axis=n_dim - 1)
+            self.hyper_kl = self.hyper_kl.mean()
 
             # latent_sample = self.vae.recog_sample
             # latent_rec_loss = self.vae.prior.nll(latent_sample)
@@ -261,3 +282,8 @@ class PmpRnn(StochasticRnn):
             self.parameters[hyperparam.raw_var] = 1
         except AttributeError as err:
             print err.message, 'Skipping init.'
+
+        try:
+            self.prior.init()
+        except AttributeError as err:
+            print err.message, 'Prior doesn\'t need init'
