@@ -16,10 +16,6 @@ from prior import LearnableDiagGauss
 from storn import StochasticRnn
 
 
-#   TODO:
-# 2016-05-10 17:17:33,346 - __main__ INFO:            1       341.36  87868544.00  42081296.00
-# PMP has disabled transform!
-
 class ProbabilisticMovementPrimitive(RankOneGauss):
 
     def __init__(self, n_basis, mean, var, u, rng=None, width=1, eps=None, parameters=None):
@@ -29,7 +25,7 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
         if hasattr(self, '_width'):
             width = self._width()
         else:
-            width = T.constant([self.width] * self.n_basis, 'width', dtype=theano.config.floatX)
+            width = T.constant(np.ones((10, 1)) * width, 'width', dtype=theano.config.floatX)
         self.width = width
         mean, u = (self._transform(i) for i in (mean, u))
 
@@ -47,7 +43,7 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
         timesteps = T.arange(0, 1, 1. / n_time_steps)
         dt = timesteps[1] - timesteps[0]
 
-        def times_basis(tens, t, b, dt, w):
+        def times_basis(tens, t, w, b, dt):
             basis = T.exp(-(t - b) ** 2 / (2 * w))
             return T.dot(basis / basis.sum(), tens)
 
