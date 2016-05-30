@@ -147,7 +147,7 @@ class PmpPriorMixin(object):
             var = self.fixed_var * T.ones((1, n_samples, self.n_latent))
             var = T.tile(var, (n_timesteps, 1, 1), ndim=len(shape))
 
-        return self.pmp_class(self.n_bases, mean, var, u, width=self.pmp_width, declare=self.parameters.declare)
+        return self.pmp_class(self.n_bases, mean, var, u, width=self.pmp_width, parameters=self.parameters)
 
     def _kl_expectation(self, kl_estimate):
         if self.kl_samples == 1:
