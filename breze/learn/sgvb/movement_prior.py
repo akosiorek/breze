@@ -22,11 +22,8 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
 
         self.parameters = parameters
         self.n_basis = n_basis
-        if hasattr(self, '_width'):
-            width = self._width()
-        else:
-            width = T.constant(np.ones((10, 1)) * width, 'width', dtype=theano.config.floatX)
-        self.width = width
+
+        self.width = self._width() if hasattr(self, '_width') else width
         mean, u = (self._transform(i) for i in (mean, u))
 
         if eps is not None:
