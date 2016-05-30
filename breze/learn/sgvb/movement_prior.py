@@ -28,9 +28,11 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
         self.n_basis = n_basis
         if hasattr(self, '_width'):
             width = self._width()
+        else:
+            width = T.constant([self.width] * self.n_basis, 'width', dtype=theano.config.floatX)
         self.width = width
         mean, u = (self._transform(i) for i in (mean, u))
-        # u /= u.max()
+
         if eps is not None:
             super(ProbabilisticMovementPrimitive, self).__init__(mean, var, u, rng, eps)
         else:
@@ -41,19 +43,19 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
         n_time_steps, n_samples, n_dims = x.shape
         x = wild_reshape(x, (n_time_steps, n_samples, self.n_basis, -1))
 
-        self.indices = T.constant(self._indices(), 'basis_time_indices', dtype=theano.config.floatX)
+        self.indices = self._indices()
         timesteps = T.arange(0, 1, 1. / n_time_steps)
         dt = timesteps[1] - timesteps[0]
 
-        def times_basis(tens, t, b, dt):
-            basis = T.exp(-(t - b) ** 2 / (2 * self.width))
+        def times_basis(tens, t, b, dt, w):
+            basis = T.exp(-(t - b) ** 2 / (2 * w))
             return T.dot(basis / basis.sum(), tens)
 
-        x, _ = theano.scan(times_basis, sequences=[x, timesteps], non_sequences=[self.indices, dt])
+        x, _ = theano.scan(times_basis, sequences=[x, timesteps, self.width], non_sequences=[self.indices, dt])
         return x
 
     def _indices(self):
-        return np.linspace(0, 1, self.n_basis)
+        return T.constant(np.linspace(0, 1, self.n_basis), 'basis_time_indices', dtype=theano.config.floatX)
 
     def init(self):
         pass
@@ -63,7 +65,7 @@ class LegendreProbabilisticMovementPrimitive(ProbabilisticMovementPrimitive):
 
     def _indices(self):
         from gaussian_roots import roots
-        return 0.5 * np.asarray(roots[self.n_basis]) + 0.5
+        return T.constant(0.5 * np.asarray(roots[self.n_basis]) + 0.5, 'basis_time_indices', dtype=theano.config.floatX)
 
 
 class FullyLearnablePMP(ProbabilisticMovementPrimitive):
@@ -76,7 +78,7 @@ class FullyLearnablePMP(ProbabilisticMovementPrimitive):
 
     def init(self):
         self.parameters[self.width] = 0.2
-        self.parameters[self._indices] = np.linspace(0, 1, self.n_basis)
+        self.parameters[self.indices] = np.linspace(0, 1, self.n_basis)
 
 
 
