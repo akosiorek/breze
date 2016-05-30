@@ -41,13 +41,12 @@ class ProbabilisticMovementPrimitive(RankOneGauss):
 
         self.indices = self._indices()
         timesteps = T.arange(0, 1, 1. / n_time_steps)
-        dt = timesteps[1] - timesteps[0]
 
-        def times_basis(tens, t, w, b, dt):
+        def times_basis(tens, t, b, w):
             basis = T.exp(-(t - b) ** 2 / (2 * w))
             return T.dot(basis / basis.sum(), tens)
 
-        x, _ = theano.scan(times_basis, sequences=[x, timesteps, self.width], non_sequences=[self.indices, dt])
+        x, _ = theano.scan(times_basis, sequences=[x, timesteps], non_sequences=[self.indices, self.width])
         return x
 
     def _indices(self):
@@ -68,6 +67,7 @@ class FullyLearnablePMP(ProbabilisticMovementPrimitive):
 
     def _width(self):
         return self.parameters.declare(self.n_basis)
+        # return self.parameters.declare(1)
 
     def _indices(self):
         return self.parameters.declare(self.n_basis)
@@ -222,12 +222,12 @@ class PmpRnn(StochasticRnn):
         #  of averaging
         self.alpha = self._make_anneal()
         try:
-            self.hyper_kl_coord_wise = kl_div(self.hyperparam_model, self.hyperprior)[[0], :, :]
+            self.hyper_kl_coord_wise = kl_div(self.hyperparam_model, self.hyperprior)[0, :, :]
             if self.use_imp_weight:
                 self.hyper_kl_coord_wise *= imp_weight
 
-            self.hyper_kl_sample_wise = self.hyper_kl_coord_wise.sum(axis=n_dim - 1)
-            self.hyper_kl = self.hyper_kl.mean()
+            self.hyper_kl_sample_wise = self.hyper_kl_coord_wise.sum(axis=-1)
+            self.hyper_kl = self.hyper_kl_sample_wise.mean()
 
             # latent_sample = self.vae.recog_sample
             # latent_rec_loss = self.vae.prior.nll(latent_sample)
@@ -282,6 +282,6 @@ class PmpRnn(StochasticRnn):
             print err.message, 'Skipping init.'
 
         try:
-            self.prior.init()
+            self.vae.prior.init()
         except AttributeError as err:
             print err.message, 'Prior doesn\'t need init'
