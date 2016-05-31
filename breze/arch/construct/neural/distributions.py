@@ -7,7 +7,8 @@ from breze.arch.construct.neural import (
 
 from breze.arch.util import lookup
 from breze.arch.component import transfer as _transfer
-from breze.arch.construct.layer.distributions import DiagGauss, Bernoulli
+from breze.arch.construct.layer.distributions import DiagGauss, Bernoulli, \
+    PlanarNormalizingFlow, RadialNormalizingFlow, GenericNormalizingFlow
 
 
 class ConcatTransfer(object):
@@ -86,6 +87,95 @@ class MlpDiagConstVarGauss(DiagGauss):
         super(MlpDiagConstVarGauss, self).__init__(
             self.mean_mlp.output,
             self.std ** 2 + 1e-8)
+
+
+class PlanarNormalizingFlowMlpDiagGauss(PlanarNormalizingFlow):
+
+    def __init__(self, inpt, n_inpt, n_hiddens, n_output, 
+                 hidden_transfers, out_transfer, n_layer,
+                 declare=None, name=None, rng=None):
+        self.inpt = inpt
+        self.n_inpt = n_inpt
+        self.n_output = n_output
+        
+        self.stt = T.zeros((inpt.shape[0], n_output * 2))
+    
+        self.mlp = Mlp( inpt,
+            n_inpt, n_hiddens,
+            n_output * 2 + n_output * 2 * n_layer + n_layer,
+            hidden_transfers, out_transfer,
+            declare=declare)
+
+        mean_0 = self.mlp.output[:, :self.n_output]
+        var_0 = T.exp(self.mlp.output[:, self.n_output:self.n_output * 2])
+
+        dist = DiagGauss(mean_0, var_0)
+        parameters = self.mlp.output[:, self.n_output * 2:]
+        super(PlanarNormalizingFlowMlpDiagGauss, self).__init__(
+            n_layer, n_output,
+            dist, parameters)
+
+
+class RadialNormalizingFlowMlpDiagGauss(RadialNormalizingFlow):
+
+    def __init__(self, inpt, n_inpt, n_hiddens, n_output,
+                 hidden_transfers, out_transfer, n_layer,
+                 declare=None, name=None, rng=None):
+        self.inpt = inpt
+        self.n_inpt = n_inpt
+        self.n_output = n_output
+
+        self.stt = T.zeros((inpt.shape[0], n_output * 2))
+
+        self.mlp = Mlp( inpt,
+            n_inpt, n_hiddens,
+            n_output * 2 + n_output * n_layer + n_layer * n_layer + n_layer *
+                        n_layer,
+            hidden_transfers, out_transfer,
+            declare=declare)
+
+        mean_0 = self.mlp.output[:, :self.n_output]
+        var_0 = T.exp(self.mlp.output[:, self.n_output:self.n_output * 2])
+
+        dist = DiagGauss(mean_0, var_0)
+        parameters = self.mlp.output[:, self.n_output * 2:]
+        super(RadialNormalizingFlowMlpDiagGauss, self).__init__(
+            n_layer, n_output, dist, parameters)
+
+
+class GenericNormalizingFlowMlpDiagGauss(GenericNormalizingFlow):
+
+    def __init__(self, inpt, n_inpt, n_hiddens, n_output,
+                 hidden_transfers, out_transfer, flow_transfers,
+                 declare=None, name=None, rng=None):
+        self.inpt = inpt
+        self.n_inpt = n_inpt
+        self.n_output = n_output
+
+        self.stt = T.zeros((inpt.shape[0], n_output * 2))
+
+        n_parameters = n_output * 2
+        for flow_transfer in flow_transfers:
+            if flow_transfer == 'planar':
+                n_parameters += 2 * n_output + 1
+            elif flow_transfer == 'radial':
+                n_parameters += n_output + 2
+            else:
+                raise NotImplementedError
+
+        self.mlp = Mlp( inpt,
+            n_inpt, n_hiddens,
+            n_parameters,
+            hidden_transfers, out_transfer,
+            declare=declare)
+
+        mean_0 = self.mlp.output[:, :self.n_output]
+        var_0 = T.exp(self.mlp.output[:, self.n_output:self.n_output * 2])
+
+        dist = DiagGauss(mean_0, var_0)
+        parameters = self.mlp.output[:, self.n_output * 2:]
+        super(GenericNormalizingFlowMlpDiagGauss, self).__init__(
+            flow_transfers, n_output, dist, parameters)
 
 
 class RnnDiagGauss(DiagGauss):
