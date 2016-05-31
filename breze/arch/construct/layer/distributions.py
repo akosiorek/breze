@@ -160,13 +160,15 @@ class GenericNormalizingFlow(NormalizingFlow):
         return self.z
 
 
-
-
-
-
-
 class PlanarNormalizingFlow(NormalizingFlow):
-    def __init__(self, n_layer, n_state, initial_dist, parameters, rng=None):
+    """
+    joint_with - if not None, computes a joint planar flow over (initial_dist.sample(), joint_with)
+                by reusing the same parameters. The jacobian of such a flow has a block structure,
+                and the det-jacobian w.r.t initial_dist and joint_with is the same if number of
+                dimensions of each of them is the same - it saves the partial neglogdet in
+                self.partial_neglogdet
+    """
+    def __init__(self, n_layer, n_state, initial_dist, parameters, rng=None, joint_with=None):
         self.n_layer = n_layer
         self.n_state = n_state
 
@@ -179,7 +181,22 @@ class PlanarNormalizingFlow(NormalizingFlow):
             parameters = assert_no_time(parameters)
         else:
             self.z = self.z_0
+
+        self.joint_flow = joint_with is not None
+        if self.joint_flow:
+            self.y_0 = joint_with
+            if joint_with.ndim == 3:
+                self.y = assert_no_time(self.y_0)
+            else:
+                self.y = self.y_0
+
+            self.partial_dims = self.z.shape[-1]
+            self.z = T.concatenate((self.z, self.y), axis=1)
+
         neglogdet = 0.0
+        if self.joint_flow:
+            partial_neglogdet = 0.0
+
         for i in range(self.n_layer):
             w = parameters[:,               (n_state * 2 + 1) * i
                              :n_state * 1 + (n_state * 2 + 1) * i]
@@ -187,18 +204,41 @@ class PlanarNormalizingFlow(NormalizingFlow):
                              :n_state * 2 + (n_state * 2 + 1) * i]
             b = parameters[:, n_state * 2 + (n_state * 2 + 1) * i
                              :n_state * 2 + (n_state * 2 + 1) * i + 1]
-            
+
+            # orthogonalization of w and u
             u = u + ((m((w * u).sum(axis=1))
                     - (w * u).sum(axis=1)).dimshuffle(0, 'x') * w
                     / (w**2).sum(1).dimshuffle(0, 'x'))
-            
-            neglogdet -= T.log( abs(1.0 + (u * df( (self.z * w).sum(1)
-                             + b.ravel()).dimshuffle(0, 'x') * w).sum(1) ))
-            self.z = ( self.z
+
+            # joint flow uses the same parameters for both parts of the flow
+            # no need to tile b since it's a scalar
+            if self.joint_flow:
+                w, u = (T.tile(i, (1, 2)) for i in(w, u))
+
+            det_part = u * df( (self.z * w).sum(1)
+                           + b.ravel()).dimshuffle(0, 'x') * w
+
+            neglogdet -= T.log(abs(1.0 + det_part.sum(1)))
+
+            if self.joint_flow:
+                det_part = det_part[:, :self.partial_dims]
+                partial_neglogdet -= T.log(abs(1.0 + det_part.sum(1)))
+
+            self.z = (self.z
                 + u * f((self.z * w).sum(1) + b.ravel()).dimshuffle(0, 'x'))
+
+        if self.joint_flow:
+            self.z = self.z[:, :self.partial_dims]
+            self.y = self.z[:, self.partial_dims:]
 
         if self.z_0.ndim == 3:
             self.z = recover_time(self.z, self.z_0.shape[0])
+
+        if self.y_0.ndim == 3:
+            self.y = recover_time(self.y, self.y_0.shape[0])
+
+        if joint_with:
+            self.partial_neglogdet = partial_neglogdet
 
         super(PlanarNormalizingFlow, self).__init__(initial_dist, neglogdet,
                                                     rng)
