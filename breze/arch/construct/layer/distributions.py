@@ -46,7 +46,7 @@ class NormalizingFlow(Distribution):
     def __init__(self, initial_dist, neglogdet, rng=None):
         self.initial_dist = initial_dist
         self.neglogdet = neglogdet
-        super(NormalizingFlow, self).__init__(rng) 
+        super(NormalizingFlow, self).__init__(rng)
 
 
 def extract_flow_pars(parameters, flow_transfers, n_state):
@@ -228,14 +228,14 @@ class PlanarNormalizingFlow(NormalizingFlow):
                 + u * f((self.z * w).sum(1) + b.ravel()).dimshuffle(0, 'x'))
 
         if self.joint_flow:
-            self.z = self.z[:, :self.partial_dims]
             self.y = self.z[:, self.partial_dims:]
+            self.z = self.z[:, :self.partial_dims]
 
         if self.z_0.ndim == 3:
             self.z = recover_time(self.z, self.z_0.shape[0])
-
-        if self.y_0.ndim == 3:
-            self.y = recover_time(self.y, self.y_0.shape[0])
+        if self.joint_flow:
+            if self.y_0.ndim == 3:
+                self.y = recover_time(self.y, self.y_0.shape[0])
 
         if joint_with:
             self.partial_neglogdet = partial_neglogdet
