@@ -95,6 +95,33 @@ def rectifier(inpt):
     return T.maximum(inpt, 0)
 
 
+def elu(inpt, alpha=1):
+    """Exponential linear unit activation function.
+
+    .. math::
+
+       f(x) = x,                   x >  0
+              \alpha (exp(x) - 1), x <= 0
+
+
+    Parameters
+    ----------
+
+    inpt : Theano variable
+        Input to be transformed.
+
+    alpha : float, optional (default = 1)
+        Scale controling saturation for negative inputs
+
+    Returns
+    -------
+
+    output : Theano variable
+        Transformed output. Same shape as ``inpt``.
+    """
+    return T.maximum(inpt, 0)
+
+
 def softplus(inpt):
     """Soft plus activation function.
 
