@@ -149,6 +149,9 @@ class BrezeWrapperBase(object):
         best_pars = None
         best_loss = float('inf')
 
+        if info_opt is not None and schedule is not None:
+            schedule(info_opt)
+
         for info in self.iter_fit(*fit_data, info_opt=info_opt):
             if report(info):
                 if 'loss' not in info:

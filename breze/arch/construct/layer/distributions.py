@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import theano
 import theano.tensor as T
 import numpy as np
 
@@ -168,14 +169,19 @@ class PlanarNormalizingFlow(NormalizingFlow):
                 dimensions of each of them is the same - it saves the partial neglogdet in
                 self.partial_neglogdet
     """
-    def __init__(self, n_layer, n_state, initial_dist, parameters, rng=None, joint_with=None):
+    def __init__(self, n_layer, n_state, initial_dist=None, parameters=None, rng=None, joint_with=None, sample=None):
         self.n_layer = n_layer
         self.n_state = n_state
 
         f = lambda x: T.tanh(x)
         df = lambda x: 1.0 - T.tanh(x) ** 2
         m = lambda x: - 1.0 + T.log(1.0 + T.exp(x))
-        self.z_0 = initial_dist.sample()
+        self.initial_dist = initial_dist
+
+        if sample is None:
+            self.z_0 = self.initial_dist.sample()
+        else:
+            self.z_0 = sample
         if self.z_0.ndim == 3:
             self.z = assert_no_time(self.z_0)
             parameters = assert_no_time(parameters)
@@ -192,11 +198,9 @@ class PlanarNormalizingFlow(NormalizingFlow):
 
             self.partial_dims = self.z.shape[-1]
             self.z = T.concatenate((self.z, self.y), axis=1)
-
-        neglogdet = 0.0
-        if self.joint_flow:
             partial_neglogdet = 0.0
 
+        neglogdet = 0.0
         for i in range(self.n_layer):
             w = parameters[:,               (n_state * 2 + 1) * i
                              :n_state * 1 + (n_state * 2 + 1) * i]
@@ -228,24 +232,26 @@ class PlanarNormalizingFlow(NormalizingFlow):
                 + u * f((self.z * w).sum(1) + b.ravel()).dimshuffle(0, 'x'))
 
         if self.joint_flow:
+            self.partial_neglogdet = partial_neglogdet
             self.y = self.z[:, self.partial_dims:]
             self.z = self.z[:, :self.partial_dims]
-
-        if self.z_0.ndim == 3:
-            self.z = recover_time(self.z, self.z_0.shape[0])
-        if self.joint_flow:
             if self.y_0.ndim == 3:
                 self.y = recover_time(self.y, self.y_0.shape[0])
 
-        if joint_with:
-            self.partial_neglogdet = partial_neglogdet
+        if self.z_0.ndim == 3:
+            self.z = recover_time(self.z, self.z_0.shape[0])
 
         super(PlanarNormalizingFlow, self).__init__(initial_dist, neglogdet,
                                                     rng)
 
     def sample(self, epsilon=None):
         # TODO: handle new sampling without using only samples from init
-        return self.z
+        if epsilon is not None:
+            z = theano.clone(self.z, {self.z_0: self.initial_dist.sample(epsilon=epsilon)})
+        else:
+            z = self.z
+
+        return z
 
 
 class RadialNormalizingFlow(NormalizingFlow):
