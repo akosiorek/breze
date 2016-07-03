@@ -1,6 +1,7 @@
 import numpy as np
 import theano
 import theano.tensor as T
+from theano.gradient import disconnected_grad
 import climin.initialize
 
 from breze.arch.util import ParameterSet
@@ -101,6 +102,7 @@ class PmpPriorMixin(object):
     pmp_class = ProbabilisticMovementPrimitive
     separate_u_mean = False
     fixed_var = False
+    min_diag_var = 0.01
 
     def make_prior(self, recog_sample, recog=None):
 
@@ -116,9 +118,11 @@ class PmpPriorMixin(object):
         #   set hypermean to 0 for mean and to 1 for variance, while keeping hypervar = 1 for all
         hyperprior_var = T.ones(shape)
         hypermean_mean = T.zeros((1, n_samples, n_mean_par + n_u_par))
-        # if not self.fixed_var:
-        hypervar_mean = T.ones((1, n_samples, n_var_par))
-        hyperprior_mean = T.concatenate([hypermean_mean, hypervar_mean], axis=len(shape)-1)
+        if not self.fixed_var:
+            print 'hypervar_mean = 0'
+            # hypervar_mean = T.ones((1, n_samples, n_var_par))
+            hypervar_mean = T.zeros((1, n_samples, n_var_par))
+            hyperprior_mean = T.concatenate([hypermean_mean, hypervar_mean], axis=len(shape)-1)
 
         self.hyperprior = DiagGauss(hyperprior_mean, hyperprior_var)
         self.hyperparam_model = self._make_hyperparam_model(shape)
@@ -137,7 +141,7 @@ class PmpPriorMixin(object):
             u = mean
 
         if not self.fixed_var:
-            var = sample[:, :, -n_var_par:] ** 2
+            var = sample[:, :, -n_var_par:] ** 2 + self.min_diag_var
         else:
             var = self.fixed_var * T.ones((1, n_samples, self.n_latent))
             var = T.tile(var, (n_timesteps, 1, 1), ndim=len(shape))
@@ -152,18 +156,51 @@ class PmpPriorMixin(object):
         kls = [theano.clone(kl_estimate, {n0: n}) for n in self.noises]
         return sum(kls) / self.kl_samples
 
-    def report(self):
+    def template(self):
+        parts =  '{n_iter:12} {time:12.2f} {loss:12.2f} {val_loss:12.2f} means={means:} vars={vars}'.split()
+        if self.annealing:
+            parts.append('{beta:12}')
+        return ' '.join(parts)
+
+    def report(self, info):
         mean, var = self.hyperparam_model.raw_mean, self.hyperparam_model.raw_var
         mean, var = self.parameters[mean], self.parameters[var]**2
-        means = ('%.4f' % s for s in (mean.min(), mean.mean(), mean.max()))
-        vars = ('%.4f' % s for s in (var.min(), var.mean(), var.max()))
-
-        return 'hyperior mean: {};\tvar: {}'.format(', '.join(means), ', '.join(vars))
+        info['means'] = '; '.join(('%.4f' % s for s in (mean.min(), mean.mean(), mean.max())))
+        info['vars'] = '; '.join(('%.4f' % s for s in (var.min(), var.mean(), var.max())))
+        if self.annealing:
+            info['beta'] = self.current_beta
 
 
 class PmpRnn(StochasticRnn):
     annealing = False
-    anneal_iters = 10000
+    beta0 = 0.01
+    beta_T = 10000
+
+    def __init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
+                 recog_transfers, gen_transfers,
+                 p_dropout_inpt=.1, p_dropout_hiddens=.1,
+                 p_dropout_hidden_to_out=None,
+                 p_dropout_shortcut=None,
+                 use_imp_weight=False,
+                 batch_size=None, optimizer='rprop',
+                 max_iter=1000, verbose=False, n_samples=None):
+        
+        self.n_samples = n_samples
+        StochasticRnn.__init__(self, n_inpt, n_hiddens_recog, n_latent, n_hiddens_gen,
+                 recog_transfers, gen_transfers,
+                 p_dropout_inpt, p_dropout_hiddens,
+                 p_dropout_hidden_to_out,
+                 p_dropout_shortcut,
+                 use_imp_weight,
+                 batch_size, optimizer,
+                 max_iter, verbose)
+
+    def init_train(self, X, VX, TX):
+
+        if hasattr(self, 'n_samples_param'):
+            self.parameters[self.n_samples_param] = float(X.shape[1])
+
+        return X, VX, TX
 
     def anneal(self, n_iter):
         if self.annealing:
@@ -171,11 +208,28 @@ class PmpRnn(StochasticRnn):
             self.iter.set_value(np.asarray([n_iter], dtype=theano.config.floatX))
             return old_val, self.alpha.eval()
 
+    def schedule(self, info):
+        if self.annealing:
+            self.current_beta = np.minimum(1.0, self.beta0 + float(info['n_iter']) / self.beta_T)
+            self.parameters[self.beta] = self.current_beta
+
+        try:
+            self._schedule_at_iter(int(info['n_iter']), info)
+        except AttributeError:
+            pass
+
     def _init_exprs(self):
         inpt, self.imp_weight = self._make_start_exprs()
         self.parameters = ParameterSet()
 
+        self.beta = self.parameters.declare((1,))
         n_dim = inpt.ndim
+
+        if not self.n_samples:
+            self.n_samples_param = self.parameters.declare(1)
+            self.n_samples_expr = disconnected_grad(self.n_samples_param).squeeze()
+        else:
+            self.n_samples_expr = self.n_samples
 
         self.vae = _VariationalAutoEncoder(inpt, self.n_inpt,
                                            self.n_latent, self.n_output,
@@ -190,55 +244,40 @@ class PmpRnn(StochasticRnn):
         if self.use_imp_weight:
             imp_weight = T.addbroadcast(self.imp_weight, n_dim - 1)
         else:
-            imp_weight = False
+            imp_weight = 1
 
         rec_loss = self.vae.gen.nll(inpt)
-        self.rec_loss_sample_wise = rec_loss.sum(axis=n_dim - 1)
+        self.rec_loss_sample_wise = rec_loss.sum(axis=-1)
         self.rec_loss = self.rec_loss_sample_wise.mean()
 
         output = self.vae.gen.stt
+        beta = disconnected_grad(self.beta.mean())
 
         # Create the KL divergence part of the loss.
-        n_dim = inpt.ndim
-
-        self.kl_coord_wise = kl_div(self.vae.recog, self.vae.prior)
-
-        if self.use_imp_weight:
-            self.kl_coord_wise *= imp_weight
-
-        # self.kl_sample_wise = self.kl_coord_wise.sum(axis=n_dim - 1)
-        self.kl_sample_wise = self._kl_expectation(self.kl_coord_wise.sum(axis=n_dim - 1))
-
+        self.kl_coord_wise = imp_weight * kl_div(self.vae.recog, self.vae.prior, beta)
+        self.kl_sample_wise = self.kl_coord_wise.sum(axis=-1)
+        # self.kl_sample_wise = self._kl_expectation(self.kl_coord_wise.sum(axis=n_dim - 1))
         self.kl = self.kl_sample_wise.mean()
 
         loss = self.kl
-        annealed_loss = self.rec_loss
+        true_loss = (imp_weight * kl_div(self.vae.recog, self.vae.prior)).sum(axis=-1).mean()
 
         # Create the KL divergence between model and prior for hyperparams.
         # It is the same for every timestep, so take once instead
         #  of averaging
-        self.alpha = self._make_anneal()
         try:
-            self.hyper_kl_coord_wise = kl_div(self.hyperparam_model, self.hyperprior)[0, :, :]
-            if self.use_imp_weight:
-                self.hyper_kl_coord_wise *= imp_weight
-
+            self.hyper_kl_coord_wise = imp_weight * kl_div(self.hyperparam_model, self.hyperprior, beta)[0, :, :]
+            self.hyper_kl_weight = 1. / self.n_samples_expr / inpt.shape[0]
             self.hyper_kl_sample_wise = self.hyper_kl_coord_wise.sum(axis=-1)
             self.hyper_kl = self.hyper_kl_sample_wise.mean()
-
-            # latent_sample = self.vae.recog_sample
-            # latent_rec_loss = self.vae.prior.nll(latent_sample)
-            # self.latent_rec_loss_sample_wise = latent_rec_loss.sum(axis=n_dim - 1)
-            # self.latent_rec_loss = self.latent_rec_loss_sample_wise.mean()
-
-            loss += self.hyper_kl
-            # annealed_loss += self.latent_rec_loss
+            loss += self.hyper_kl_weight * self.hyper_kl
+            true_loss += self.hyper_kl_weight * kl_div(self.hyperparam_model, self.hyperprior, beta)[0, :, :].sum(axis=-1).mean()
 
         except AttributeError as err:
-            print err.message, 'Skipping Hyperior-related loss.'
+            print err.message, 'Skipping Hyperprior-related loss.'
 
-        true_loss = loss + annealed_loss
-        loss += self.alpha * annealed_loss
+        true_loss += self.rec_loss
+        loss += disconnected_grad(self.beta.mean()) * self.rec_loss
 
         UnsupervisedModel.__init__(self, inpt=inpt,
                                    output=output,
@@ -248,16 +287,6 @@ class PmpRnn(StochasticRnn):
 
         self.transform_expr_name = None
         self.exprs['true_loss'] = true_loss
-
-    def _make_anneal(self):
-        if self.annealing:
-            self.iter = theano.shared(np.zeros(1, dtype=theano.config.floatX))
-            anneal_rate = 0.01 + self.iter / float(self.anneal_iters)
-            arg = T.concatenate([T.ones_like(self.iter), anneal_rate])
-            alpha = T.min(arg)
-        else:
-            alpha = 1
-        return alpha
 
     def initialize(self,
                    par_std=1, par_std_affine=None, par_std_rec=None,
@@ -269,16 +298,19 @@ class PmpRnn(StochasticRnn):
                                        par_std_in, sparsify_affine,
                                        sparsify_rec, spectral_radius)
 
-        try:
-            hyperparam = self.hyperparam_model
-            self.parameters[hyperparam.raw_mean][:-self.n_latent] = 0
-            if not hasattr(self, 'fixed_var') or not self.fixed_var:
-                self.parameters[hyperparam.raw_mean][-self.n_latent:] = 1
-            self.parameters[hyperparam.raw_var] = 1
-        except AttributeError as err:
-            print err.message, 'Skipping init.'
+        # try:
+        #     hyperparam = self.hyperparam_model
+        #     self.parameters[hyperparam.raw_mean][:-self.n_latent] = 0
+        #     if not hasattr(self, 'fixed_var') or not self.fixed_var:
+        #         self.parameters[hyperparam.raw_mean][-self.n_latent:] = 1
+        #     self.parameters[hyperparam.raw_var] = 1
+        # except AttributeError as err:
+        #     print err.message, 'Skipping init.'
 
         try:
             self.vae.prior.init()
         except AttributeError as err:
             print err.message, 'Prior doesn\'t need init'
+
+        self.parameters[self.beta] = self.beta0
+        self.current_beta = self.beta0

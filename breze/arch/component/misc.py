@@ -2,7 +2,7 @@
 
 """Module holding miscellaneous functionality."""
 
-
+import numpy as np
 import theano.tensor as T
 
 import norm as norm_
@@ -144,7 +144,8 @@ def project_into_l2_ball(arr, radius=1):
     return arr
 
 
-def inter_gauss_kl(mean, var, mean_=0, var_=1, var_offset=0, var_offset_=0, u1=None, eta1=None, u2=None, eta2=None):
+def inter_gauss_kl(mean, var, mean_=0, var_=1, var_offset=0, var_offset_=0,
+                   u1=None, eta1=None, u2=None, eta2=None, beta=None):
     """Function returning a theano tensor representing the Kullback-Leibler
     divergence between Gaussian distributed random variables and a white
     Gaussian.
@@ -170,14 +171,22 @@ def inter_gauss_kl(mean, var, mean_=0, var_=1, var_offset=0, var_offset_=0, u1=N
     """
     m1, s1, m2, s2 = mean, T.sqrt(var + var_offset), mean_, T.sqrt(var_ + var_offset_)
     m12 = m1 - m2
-    kl = T.log(s2 / s1) + (s1 ** 2 + m12 ** 2) / (2 * s2 ** 2) - .5
+
+    if beta is None:
+        log_det_ratio = T.log(s2 / s1)
+        beta = 1
+    else:
+        log_det_ratio = beta * 0.5 * T.log(2.0 * np.pi * s2 ** 2) - 0.5 * T.log(2.0 * np.pi * s1 ** 2)
+
+    kl = log_det_ratio + beta * (s1 ** 2 + m12 ** 2) / (2 * s2 ** 2) - .5
     if u1 is not None:
         raise NotImplementedError
     if u2 is not None:
         K = m2.shape[-1]
-        kl += -0.5 * T.log(eta2) / K
-        kl += -0.5 * eta2 * (u2 * s1 / s2 ** 2) ** 2
-        kl += -0.5 * eta2 * (m12 * u2 / s2 ** 2).sum(axis=-1, keepdims=True) ** 2 / K
+        kl_corr = -0.5 * T.log(eta2) / K +\
+                  -0.5 * eta2 * (u2 * s1 / s2 ** 2) ** 2 +\
+                  -0.5 * eta2 * (m12 * u2 / s2 ** 2).sum(axis=-1, keepdims=True) ** 2 / K
+        kl += beta * kl_corr
 
     return kl
 
