@@ -172,7 +172,7 @@ def inter_gauss_kl(mean, var, mean_=0, var_=1, var_offset=0, var_offset_=0,
     m1, s1, m2, s2 = mean, T.sqrt(var + var_offset), mean_, T.sqrt(var_ + var_offset_)
     m12 = m1 - m2
 
-    if beta is None:
+    if beta is None or beta == 1:
         log_det_ratio = T.log(s2 / s1)
         beta = 1
     else:

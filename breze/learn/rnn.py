@@ -251,7 +251,7 @@ class SupervisedFastDropoutRnn(BaseRnn, SupervisedModel):
 
     def __init__(self, n_inpt, n_hiddens, n_output,
                  hidden_transfers, out_transfer='identity',
-                 loss='squared', pooling=None,
+                 loss_ident='squared', pooling=None,
                  gradient_clip=False,
                  p_dropout_inpt=.2, p_dropout_hiddens=.5,
                  p_dropout_hidden_to_out=None,
@@ -278,7 +278,7 @@ class SupervisedFastDropoutRnn(BaseRnn, SupervisedModel):
 
         super(SupervisedFastDropoutRnn, self).__init__(
             n_inpt, n_hiddens, n_output,
-            hidden_transfers, out_transfer, loss, pooling=pooling,
+            hidden_transfers, out_transfer, loss_ident, pooling=pooling,
             gradient_clip=gradient_clip,
             optimizer=optimizer, batch_size=batch_size, max_iter=max_iter,
             verbose=verbose, imp_weight=imp_weight)

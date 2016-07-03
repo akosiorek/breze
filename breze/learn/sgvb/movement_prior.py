@@ -251,7 +251,7 @@ class PmpRnn(StochasticRnn):
         self.rec_loss = self.rec_loss_sample_wise.mean()
 
         output = self.vae.gen.stt
-        beta = disconnected_grad(self.beta.mean())
+        beta = disconnected_grad(self.beta.mean()) if self.annealing else beta = 1
 
         # Create the KL divergence part of the loss.
         self.kl_coord_wise = imp_weight * kl_div(self.vae.recog, self.vae.prior, beta)
@@ -286,7 +286,8 @@ class PmpRnn(StochasticRnn):
                                    imp_weight=self.imp_weight)
 
         self.transform_expr_name = None
-        self.exprs['true_loss'] = true_loss
+        if self.annealing:
+            self.exprs['true_loss'] = true_loss
 
     def initialize(self,
                    par_std=1, par_std_affine=None, par_std_rec=None,
