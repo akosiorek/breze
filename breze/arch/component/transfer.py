@@ -119,7 +119,8 @@ def elu(inpt, alpha=1):
     output : Theano variable
         Transformed output. Same shape as ``inpt``.
     """
-    return T.maximum(inpt, alpha * T.exp(inpt) - 1)
+
+    return T.switch(inpt > 0, inpt, alpha * T.expm1(inpt))
 
 
 def softplus(inpt):
