@@ -54,11 +54,16 @@ class ConstVarGaussVisibleStornMixin(object):
 
     shared_std = False
     fixed_std = None
+    n_gen_inpt = None
 
     def make_gen(self, latent_sample):
+
+        if self.n_gen_inpt is None:
+            self.n_gen_inpt = self.n_latent + self.n_inpt
+
         return neural_dists.FastDropoutRnnConstDiagGauss(
             latent_sample,
-            n_inpt=self.n_latent + self.n_inpt,
+            n_inpt=self.n_gen_inpt,
             n_hiddens=self.n_hiddens_gen,
             n_output=self.n_inpt,
             hidden_transfers=self.gen_transfers,
