@@ -114,10 +114,7 @@ class GenericRnnAE(Model):
 
     def _init_pars(self):
         spec = self._make_spec()
-
         self.parameters = ParameterSet(**spec)
-        self.parameters.data[:] = np.random.standard_normal(
-            self.parameters.data.shape).astype(theano.config.floatX)
 
     def _init_exprs(self):
         self.exprs = {'inpt': T.tensor3('inpt')}
@@ -133,7 +130,7 @@ class GenericRnnAE(Model):
 
         imp_weight = False if not self.imp_weight else self.exprs['imp_weight']
         self.exprs.update(supervised_loss(
-            self.exprs['inpt'], self.exprs[self.decode_name + '_output'], self.loss, 2,
+            self.exprs['inpt'], self.exprs[self.decode_name + '_output'], self.loss, coord_axis=-1,
             imp_weight=imp_weight))
 
 
@@ -159,8 +156,9 @@ class DenoisingMixin(object):
         )
 
         score = self.exprs['loss']
+        true_loss = self.exprs['loss']
         loss = theano.clone(
-            self.exprs['loss'],
+            true_loss,
             {self.exprs[corrupted_output_name]: output_from_corrupt})
 
         self.exprs.update(get_named_variables(locals(), overwrite=True))
@@ -321,8 +319,6 @@ class LadderRnn(GenericRnnAE, DenoisingMixin, SupervisedBrezeWrapperBase):
 
     def _init_exprs(self):
         GenericRnnAE._init_exprs(self)
-        DenoisingMixin._init_exprs(self)
-
         self.exprs['target'] = T.tensor3('target')
 
         input_name = GenericRnnAE.encode_name + '_output'
@@ -332,7 +328,26 @@ class LadderRnn(GenericRnnAE, DenoisingMixin, SupervisedBrezeWrapperBase):
         # TODO: enable imp weights; there might be different ones for input and output(?)
         reconstruction_loss = self.exprs['loss']
         prediction_loss = supervised_loss(
-            self.exprs['target'], self.exprs[self.predict_name + '_output'], self.loss, 2,
+            self.exprs['target'], self.exprs[self.predict_name + '_output'], self.loss, coord_axis=-1,
             imp_weight=False)['loss']
 
-        self.exprs['loss'] = reconstruction_loss + prediction_loss
+        loss = reconstruction_loss + prediction_loss
+
+        if self.c_noise != 0:
+            self.exprs['true_loss'] = loss
+            loss = self.corrupt_loss(loss)
+
+        self.exprs['loss'] = loss
+
+    def corrupt_loss(self, loss):
+
+        inpt = self.exprs['inpt']
+        if self.noise_type == 'gauss':
+            inpt_scale = 1 / T.sqrt(1 + self.c_noise**2)
+            corrupted_inpt = corrupt.gaussian_perturb(inpt, self.c_noise)
+        elif self.noise_type == 'mask':
+            inpt_scale = 1 / (1 - self.c_noise)
+            corrupted_inpt = corrupt.mask(inpt, self.c_noise)
+
+        return theano.clone(loss, {inpt: corrupted_inpt * inpt_scale})
+

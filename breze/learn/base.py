@@ -59,7 +59,12 @@ class BrezeWrapperBase(object):
     def _d_loss(self):
         """Return a theano expression for the gradient of the loss wrt the
         flat parameters of the model."""
-        return T.grad(self.exprs['loss'], self.parameters.flat)
+
+        loss = self.exprs['loss']
+        clip = getattr(self, 'gradient_clip', False)
+        if clip:
+            loss = theano.gradient.grad_clip(loss, -clip, clip)
+        return T.grad(loss, self.parameters.flat)
 
     def _make_optimizer(self, f, fprime, args, wrt=None, f_Hp=None, info=None):
         if isinstance(self.optimizer, (str, unicode)):
@@ -88,7 +93,7 @@ class BrezeWrapperBase(object):
             opt.set_from_info(info)
         return opt
 
-    def powerfit(self, fit_data, eval_data, stop, report, eval_train_loss=True, info_opt=None):
+    def powerfit(self, fit_data, eval_data, stop, report, eval_train_loss=True, info_opt=None, schedule=None):
         """Iteratively fit the model.
 
         This is a convenience function which combines iteratively fitting a

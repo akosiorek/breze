@@ -305,6 +305,7 @@ class ParameterSet(object):
     def __init__(self, **kwargs):
         dictlist.replace(kwargs, lambda x: (x,) if isinstance(x, int) else x)
         self.n_pars = n_pars_by_partition(kwargs)
+        self._n_pars = self.n_pars
 
         # Create two representations of the parameters of the object. The first
         # is the symbolic theano variable (of which the type is GPU/CPU
