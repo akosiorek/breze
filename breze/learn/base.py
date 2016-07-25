@@ -135,6 +135,9 @@ class BrezeWrapperBase(object):
         best_pars = None
         best_loss = float('inf')
 
+        if info_opt is not None and schedule is not None:
+            schedule(info_opt)
+
         for info in self.iter_fit(*fit_data, info_opt=info_opt):
             if report(info):
                 if 'loss' not in info:
@@ -157,6 +160,12 @@ class BrezeWrapperBase(object):
 
                 if stop(info) or self.CTRL_C_FLAG:
                     break
+
+            if schedule <> None:
+                schedule(info)
+
+
+
 
     def _ctrl_c_handler(self, signal, frame):
         self.CTRL_C_FLAG = True
