@@ -256,22 +256,25 @@ class PmpRnn(StochasticRnn):
         # Create the KL divergence part of the loss.
         self.kl_coord_wise = imp_weight * kl_div(self.vae.recog, self.vae.prior, beta)
         self.kl_sample_wise = self.kl_coord_wise.sum(axis=-1)
-        # self.kl_sample_wise = self._kl_expectation(self.kl_coord_wise.sum(axis=n_dim - 1))
         self.kl = self.kl_sample_wise.mean()
 
+        # true loss without annealing
         loss = self.kl
         true_loss = (imp_weight * kl_div(self.vae.recog, self.vae.prior)).sum(axis=-1).mean()
 
         # Create the KL divergence between model and prior for hyperparams.
         # It is the same for every timestep, so take once instead
-        #  of averaging
+        # of averaging
         try:
-            self.hyper_kl_coord_wise = imp_weight * kl_div(self.hyperparam_model, self.hyperprior, beta)[0, :, :]
+            # hyperprior kl w/o annealing
             self.hyper_kl_weight = 1. / self.n_samples_expr / inpt.shape[0]
+            self.hyper_kl_coord_wise = imp_weight * kl_div(self.hyperparam_model, self.hyperprior)[0, :, :]
             self.hyper_kl_sample_wise = self.hyper_kl_coord_wise.sum(axis=-1)
             self.hyper_kl = self.hyper_kl_sample_wise.mean()
+
+            # add hyper-kl only to ``loss``, since it's a regularizer and we're not interested
+            # in its value
             loss += self.hyper_kl_weight * self.hyper_kl
-            true_loss += self.hyper_kl_weight * kl_div(self.hyperparam_model, self.hyperprior, beta)[0, :, :].sum(axis=-1).mean()
 
         except AttributeError as err:
             print err.message, 'Skipping Hyperprior-related loss.'
@@ -286,8 +289,7 @@ class PmpRnn(StochasticRnn):
                                    imp_weight=self.imp_weight)
 
         self.transform_expr_name = None
-        if self.annealing:
-            self.exprs['true_loss'] = true_loss
+        self.exprs['true_loss'] = true_loss
 
     def initialize(self,
                    par_std=1, par_std_affine=None, par_std_rec=None,
