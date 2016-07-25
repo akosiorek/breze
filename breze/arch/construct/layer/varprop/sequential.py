@@ -4,6 +4,7 @@ import theano.tensor as T
 
 from breze.arch.component.varprop import transfer as _transfer
 from breze.arch.construct.base import Layer
+from breze.arch.construct.layer.varprop.simple import normalize as _normalize
 from breze.arch.model.varprop.rnn import (recurrent_layer,
                                           recurrent_layer_stateful)
 from breze.arch.util import lookup
@@ -12,12 +13,13 @@ from breze.arch.util import lookup
 class FDRecurrent(Layer):
 
     def __init__(self, inpt_mean, inpt_var, n_inpt, transfer, p_dropout,
-                 declare=None, name=None):
+                 declare=None, name=None, normalize=None):
         self.inpt_mean = inpt_mean
         self.inpt_var = inpt_var
         self.n_inpt = n_inpt
         self.transfer = transfer
         self.p_dropout = p_dropout
+        self.normalize = normalize
         super(FDRecurrent, self).__init__(declare, name)
 
     def _forward(self):
@@ -40,7 +42,7 @@ class FDRecurrent(Layer):
                 self.weights,
                 f,
                 self.initial_mean, self.initial_std ** 2 + 1e-8,
-                self.p_dropout)
+                self.p_dropout, self.n_inpt, self.declare, self.normalize)
             (self.state_mean, self.state_var,
              self.output_in_mean, self.output_in_var,
              self.output_mean, self.output_var) = res
@@ -50,7 +52,7 @@ class FDRecurrent(Layer):
                 self.weights,
                 f,
                 self.initial_mean, self.initial_std ** 2 + 1e-8,
-                self.p_dropout)
+                self.p_dropout, self.n_inpt, self.declare, self.normalize)
             (self.output_in_mean, self.output_in_var,
              self.output_mean, self.output_var) = res
 

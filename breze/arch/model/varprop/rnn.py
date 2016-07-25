@@ -19,6 +19,7 @@ import theano
 import theano.tensor as T
 from theano.tensor.extra_ops import repeat
 
+from breze.arch.construct.layer.varprop.simple import normalize as _normalize
 
 # TODO check documentation
 
@@ -68,7 +69,7 @@ def unflat_time(x, time_steps):
 
 def recurrent_layer(in_mean, in_var, weights, f,
                     initial_hidden_mean, initial_hidden_var,
-                    p_dropout):
+                    p_dropout, n_inpt=None, declare=None, normalize=None):
     """Return a theano variable representing a recurrent layer.
 
     Parameters
@@ -128,6 +129,7 @@ def recurrent_layer(in_mean, in_var, weights, f,
 
         hov = T.dot(element_var, weights ** 2) + inpt_var
 
+        hom, hov = _normalize(hom, hov, n_inpt, declare, normalize)
         fhom, fhov = f(hom, hov)
 
         return hom, hov, fhom, fhov
@@ -156,7 +158,7 @@ def recurrent_layer(in_mean, in_var, weights, f,
 
 def recurrent_layer_stateful(
         in_mean, in_var, weights, f, initial_hidden_mean, initial_hidden_var,
-        p_dropout):
+        p_dropout, n_inpt, declare, normalize):
     # TODO: documentation needs to explain the stateful thing.
     """Return a theano variable representing a recurrent layer.
 
@@ -221,6 +223,8 @@ def recurrent_layer_stateful(
         state_mean_tm1 *= p_keep
         state_var_tm1 *= dropout_var ** 2
 
+        hom, hov = _normalize(hom, hov, n_inpt, declare, normalize)
+        state_mean_tm1, state_var_tm1 = _normalize(state_mean_tm1, state_var_tm1, n_inpt, declare, normalize)
         state_mean, state_var, fhom, fhov = f(
             state_mean_tm1, state_var_tm1, hom, hov)
 

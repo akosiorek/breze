@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import theano.tensor as T
+from theano.tensor.nnet import batch_normalization
 
 from breze.arch.construct.base import Layer
 from breze.arch.util import lookup, get_named_variables
@@ -14,13 +15,14 @@ def make_std(std):
 class AffineNonlinear(Layer):
 
     def __init__(self, inpt_mean, inpt_var, n_inpt, n_output,
-                 transfer='identity', use_bias=True, declare=None, name=None):
+                 transfer='identity', use_bias=True, declare=None, name=None, normalize=None):
         self.inpt_mean = inpt_mean
         self.inpt_var = inpt_var
         self.n_inpt = n_inpt
         self.n_output = n_output
         self.transfer = transfer
         self.use_bias = use_bias
+        self.normalize = normalize
         super(AffineNonlinear, self).__init__(declare, name)
 
     def _forward(self):
@@ -33,9 +35,9 @@ class AffineNonlinear(Layer):
 
         self.pres_var = T.dot(self.inpt_var, w ** 2)
 
+        mean, var = normalize(self.pres_mean, self.pres_var, self.declare, self.normalize)
         f_transfer = lookup(self.transfer, transfer)
-        self.post_mean, self.post_var = f_transfer(
-            self.pres_mean, self.pres_var)
+        self.post_mean, self.post_var = f_transfer(mean, var)
 
         self.outputs = self.post_mean, self.post_var
 
@@ -88,3 +90,36 @@ class FastDropout(Layer):
                       + dropout_var * self.inpt_var)
 
         self.outputs = self.output_mean, self.output_var
+
+
+class BatchNormalization(object):
+    axis = -2
+
+    def __init__(self, mean, var, n_inpt, declare, mode='high_mem'):
+        self.inpt_mean = mean
+        self.inpt_var = var
+        self.n_inpt = n_inpt
+
+        scale = declare(n_inpt)
+        shift = declare(n_inpt)
+        mean = self.inpt_mean.mean(axis=self.axis, keepdims=True)
+        std = self.inpt_mean.std(axis=self.axis, keepdims=True) + 1e-5
+        self.mean = batch_normalization(self.inpt_mean, scale, shift, mean, std, mode)
+        self.var = self.inpt_var * (scale / std) ** 2
+
+
+class LayerNormalization(BatchNormalization):
+    axis = -1
+
+
+def normalize(mean, var, n_inpt, declare, kind=None):
+    if kind is None:
+        return mean, var
+
+    if kind == 'batch':
+        bn = BatchNormalization(mean, var, n_inpt, declare)
+    elif kind == 'layer':
+        bn = LayerNormalization(mean, var, n_inpt, declare)
+    else:
+        raise ValueError('Invalid normalization type: {}'.format(kind))
+    return bn.mean, bn.var

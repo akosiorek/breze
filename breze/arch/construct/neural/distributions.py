@@ -43,7 +43,7 @@ class MlpDiagGauss(DiagGauss):
     def __init__(self, inpt, n_inpt, n_hiddens, n_output,
                  hidden_transfers, out_transfer_mean='identity',
                  out_transfer_var=var_transfer,
-                 declare=None, name=None, rng=None):
+                 declare=None, name=None, rng=None, normalize=None):
         self.inpt = inpt
         self.n_inpt = n_inpt
         self.n_hiddens = n_hiddens
@@ -56,7 +56,7 @@ class MlpDiagGauss(DiagGauss):
             self.inpt, self.n_inpt, self.n_hiddens, self.n_output * 2,
             self.hidden_transfers,
             ConcatTransfer(self.out_transfer_mean, self.out_transfer_var),
-            declare=declare)
+            declare=declare, normalize=normalize)
 
         super(MlpDiagGauss, self).__init__(
             self.mlp.output[:, :self.n_output],
@@ -328,7 +328,7 @@ class BaseFastDropoutRnnDistribution(object):
                  pooling=None,
                  p_dropout_inpt=.1, p_dropout_hiddens=.1,
                  p_dropout_hidden_to_out=None,
-                 declare=None, name=None, rng=None):
+                 declare=None, name=None, rng=None, normalize=None):
         self.inpt = inpt
         self.n_inpt = n_inpt
         self.n_hiddens = n_hiddens
@@ -344,6 +344,7 @@ class BaseFastDropoutRnnDistribution(object):
         self.declare = declare
         self.name = name
         self.rng = rng
+        self.normalize = normalize
 
         self.rnn = self._make_model()
         self._init_distribution()
@@ -431,7 +432,7 @@ class FastDropoutRnnConstDiagGauss(BaseFastDropoutRnnDistribution, DiagGauss):
                  p_dropout_hidden_to_out=None,
                  shared_std=True,
                  fixed_std=None,
-                 declare=None, name=None, rng=None):
+                 declare=None, name=None, rng=None, normalize=None):
         if fixed_std is None:
             if shared_std:
                 self.std = declare((1,))
@@ -449,7 +450,7 @@ class FastDropoutRnnConstDiagGauss(BaseFastDropoutRnnDistribution, DiagGauss):
             pooling,
             p_dropout_inpt, p_dropout_hiddens,
             p_dropout_hidden_to_out,
-            declare, name, rng)
+            declare, name, rng, normalize=normalize)
 
     def _make_model(self):
         if self.out_transfer is None:
@@ -465,7 +466,8 @@ class FastDropoutRnnConstDiagGauss(BaseFastDropoutRnnDistribution, DiagGauss):
             p_dropout_inpt=self.p_dropout_inpt,
             p_dropout_hiddens=self.p_dropout_hiddens,
             p_dropout_hidden_to_out=self.p_dropout_hidden_to_out,
-            declare=self.declare
+            declare=self.declare,
+            normalize=self.normalize
         )
 
     def _init_distribution(self):

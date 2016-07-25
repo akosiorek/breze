@@ -3,6 +3,7 @@
 
 import itertools
 
+from theano.tensor.nnet import batch_normalization
 from breze.arch.util import ParameterSet
 
 
@@ -49,3 +50,34 @@ class Layer(object):
         state = self.__dict__.copy()
         state['declare'] = invalid_declare
         return state
+
+
+class BatchNormalization(object):
+    axis = -2
+
+    def __init__(self, inpt, n_inpt, declare, mode='high_mem'):
+        self.inpt = inpt
+        self.n_inpt = n_inpt
+
+        scale = declare(n_inpt)
+        shift = declare(n_inpt)
+        mean = inpt.mean(axis=self.axis, keepdims=True)
+        std = inpt.std(axis=self.axis, keepdims=True) + 1e-5
+        self.output = batch_normalization(inpt, scale, shift, mean, std, mode)
+
+
+class LayerNormalization(BatchNormalization):
+    axis = -1
+
+
+def normalize(inpt, n_inpt, declare, kind=None):
+    if kind is None:
+        return inpt
+
+    if kind == 'batch':
+        bn = BatchNormalization(inpt, n_inpt, declare)
+    elif kind == 'layer':
+        bn = LayerNormalization(inpt, n_inpt, declare)
+    else:
+        raise ValueError('Invalid normalization type: {}'.format(kind))
+    return bn.output

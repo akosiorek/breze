@@ -7,7 +7,7 @@ from theano.tensor.nnet import conv
 from theano.tensor.signal import downsample
 
 from breze.arch.component import transfer as _transfer, loss as _loss
-from breze.arch.construct.base import Layer
+from breze.arch.construct.base import Layer, normalize as _normalize
 from breze.arch.util import lookup
 
 
@@ -22,12 +22,13 @@ class AffineNonlinear(Layer):
         return self._n_output
 
     def __init__(self, inpt, n_inpt, n_output, transfer='identity',
-                 use_bias=True, declare=None, name=None):
+                 use_bias=True, declare=None, name=None, normalize=None):
         self.inpt = inpt
         self._n_inpt = n_inpt
         self._n_output = n_output
         self.transfer = transfer
         self.use_bias = use_bias
+        self.normalize = normalize
         super(AffineNonlinear, self).__init__(declare=declare, name=name)
 
     def _forward(self):
@@ -41,7 +42,8 @@ class AffineNonlinear(Layer):
 
         f = lookup(self.transfer, _transfer)
 
-        self.output = f(self.output_in)
+        self.normalized_output = _normalize(self.output_in, self.n_output, self.declare, kind=self.normalize)
+        self.output = f(self.normalized_output)
 
 
 class Split(Layer):

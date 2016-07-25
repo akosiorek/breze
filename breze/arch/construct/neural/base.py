@@ -29,13 +29,14 @@ def wild_reshape(tensor, shape):
 class Mlp(Layer):
 
     def __init__(self, inpt, n_inpt, n_hiddens, n_output,
-                 hidden_transfers, out_transfer, declare=None, name=None):
+                 hidden_transfers, out_transfer, declare=None, name=None, normalize=None):
         self.inpt = inpt
         self.n_inpt = n_inpt
         self.n_hiddens = n_hiddens
         self.n_output = n_output
         self.hidden_transfers = hidden_transfers
         self.out_transfer = out_transfer
+        self.normalize = normalize
 
         super(Mlp, self).__init__(declare, name)
 
@@ -48,7 +49,7 @@ class Mlp(Layer):
 
         inpt = self.inpt
         for n, m, t in zip(n_inpts, n_outputs, transfers):
-            layer = simple.AffineNonlinear(inpt, n, m, t, declare=self.declare)
+            layer = simple.AffineNonlinear(inpt, n, m, t, declare=self.declare, normalize=self.normalize)
             self.layers.append(layer)
             inpt = layer.output
 
@@ -361,7 +362,7 @@ class FastDropoutRnn(Layer):
                  p_dropout_hiddens=.5,
                  p_dropout_hidden_to_out=None,
                  pooling=None,
-                 declare=None, name=None):
+                 declare=None, name=None, normalize=None):
         self.inpt = inpt
         self.n_inpt = n_inpt
         self.n_hiddens = n_hiddens
@@ -369,6 +370,7 @@ class FastDropoutRnn(Layer):
         self.hidden_transfers = hidden_transfers
         self.out_transfer = out_transfer
         self.pooling = pooling
+        self.normalize = normalize
 
         self.p_dropout_inpt = p_dropout_inpt
 
@@ -391,7 +393,7 @@ class FastDropoutRnn(Layer):
 
         affine = vp_simple.AffineNonlinear(
             x_mean_flat, x_var_flat, n_inpt * tos, n_output * tis, 'identity',
-            declare=self.declare)
+            declare=self.declare, normalize=self.normalize)
         pre_rec_mean_flat, pre_rec_var_flat = affine.outputs
 
         pre_rec_mean = wild_reshape(pre_rec_mean_flat,
@@ -405,7 +407,7 @@ class FastDropoutRnn(Layer):
 
         recurrent = vp_sequential.FDRecurrent(
             pre_rec_mean, pre_rec_var, n_output, transfer, p_dropout=p_dropout,
-            declare=self.declare)
+            declare=self.declare, normalize=self.normalize)
         x_mean, x_var = recurrent.outputs
 
         self.layers += [affine, recurrent]
@@ -459,7 +461,7 @@ class FastDropoutRnn(Layer):
         x_mean_flat, x_var_flat = fd.outputs
         affine = vp_simple.AffineNonlinear(
             x_mean_flat, x_var_flat, n, self.n_output, self.out_transfer,
-            declare=self.declare)
+            declare=self.declare, normalize=self.normalize)
         output_mean_flat, output_var_flat = affine.outputs
         self.layers += [fd, affine]
 
@@ -485,7 +487,7 @@ class BidirectFastDropoutRnn(FastDropoutRnn):
 
         affine = vp_simple.AffineNonlinear(
             x_mean_flat, x_var_flat, n_inpt * tos, n_output * tis, 'identity',
-            declare=self.declare)
+            declare=self.declare, normalize=self.normalize)
         pre_rec_mean_flat, pre_rec_var_flat = affine.outputs
 
         pre_rec_mean = wild_reshape(pre_rec_mean_flat,
@@ -499,11 +501,11 @@ class BidirectFastDropoutRnn(FastDropoutRnn):
 
         recurrent_fw = vp_sequential.FDRecurrent(
             pre_rec_mean, pre_rec_var, n_output, transfer, p_dropout=p_dropout,
-            declare=self.declare)
+            declare=self.declare, normalize=self.normalize)
         recurrent_bw = vp_sequential.FDRecurrent(
             pre_rec_mean[::-1], pre_rec_var[::-1], n_output, transfer,
             p_dropout=p_dropout,
-            declare=self.declare)
+            declare=self.declare, normalize=self.normalize)
 
         x_mean = recurrent_fw.outputs[0] + recurrent_bw.outputs[0]
         x_var = recurrent_fw.outputs[1] + recurrent_bw.outputs[1]
