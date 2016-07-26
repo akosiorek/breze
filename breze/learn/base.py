@@ -209,7 +209,7 @@ class SupervisedBrezeWrapperBase(BrezeWrapperBase):
 
         return f_loss, f_d_loss
 
-    def _make_args(self, X, Z, imp_weight=None, n_cycles=False):
+    def _make_args(self, X, Z, imp_weight=None, n_cycles=None):
         batch_size = getattr(self, 'batch_size', None)
         if batch_size is None:
             X, Z = cast_array_to_local_type(X), cast_array_to_local_type(Z)
@@ -402,7 +402,7 @@ class UnsupervisedBrezeWrapperBase(BrezeWrapperBase):
             if i + 1 >= self.max_iter:
                 break
 
-    def _make_args(self, X, W=None, n_cycles=False):
+    def _make_args(self, X, W=None, n_cycles=None):
         batch_size = getattr(self, 'batch_size', None)
         item = [X] if W is None else [X, W]
         if batch_size is None:
