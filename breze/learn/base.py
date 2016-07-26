@@ -169,11 +169,11 @@ class BrezeWrapperBase(object):
 
                 info['best_loss'] = best_loss
                 info['best_pars'] = best_pars
-
                 yield info
 
                 if stop(info) or self.CTRL_C_FLAG:
                     break
+
             if schedule <> None:
                 schedule(info)
 
@@ -251,7 +251,7 @@ class SupervisedModel(Model, BrezeWrapperBase):
 
         return f_loss, f_d_loss
 
-    def _make_args(self, X, Z, imp_weight=None, n_cycles=False):
+    def _make_args(self, X, Z, imp_weight=None, n_cycles=None):
         batch_size = getattr(self, 'batch_size', None)
         if batch_size is None:
             X, Z = cast_array_to_local_type(X), cast_array_to_local_type(Z)
@@ -499,7 +499,7 @@ class UnsupervisedModel(Model, BrezeWrapperBase):
             if i + 1 >= self.max_iter:
                 break
 
-    def _make_args(self, X, W=None, n_cycles=False):
+    def _make_args(self, X, W=None, n_cycles=None):
         batch_size = getattr(self, 'batch_size', None)
         use_imp_weight = W is not None
         if self.use_imp_weight != use_imp_weight:
