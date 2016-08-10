@@ -13,13 +13,14 @@ from breze.arch.util import lookup
 class FDRecurrent(Layer):
 
     def __init__(self, inpt_mean, inpt_var, n_inpt, transfer, p_dropout,
-                 declare=None, name=None, normalize=None):
+                 declare=None, name=None, normalize=None, use_bias=True):
         self.inpt_mean = inpt_mean
         self.inpt_var = inpt_var
         self.n_inpt = n_inpt
         self.transfer = transfer
         self.p_dropout = p_dropout
         self.normalize = normalize
+        self.use_bias = use_bias
         super(FDRecurrent, self).__init__(declare, name)
 
     def _forward(self):
@@ -36,13 +37,18 @@ class FDRecurrent(Layer):
         self.initial_std = self.declare((m,))
         self.weights = self.declare((m, n))
 
+        if self.use_bias:
+            self.bias = self.declare((n,))
+        else:
+            self.bias = 0
+
         if getattr(f, 'stateful', False):
             res = recurrent_layer_stateful(
                 self.inpt_mean, self.inpt_var,
                 self.weights,
                 f,
                 self.initial_mean, self.initial_std ** 2 + 1e-8,
-                self.p_dropout, self.n_inpt, self.declare, self.normalize)
+                self.p_dropout, self.n_inpt, self.declare, self.normalize, self.bias)
             (self.state_mean, self.state_var,
              self.output_in_mean, self.output_in_var,
              self.output_mean, self.output_var) = res

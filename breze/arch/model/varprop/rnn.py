@@ -117,8 +117,8 @@ def recurrent_layer(in_mean, in_var, weights, f,
         Theano sequence tensor representing the varianceof the hidden
         activations after the application of ``f``.
     """
-    def step(inpt_mean, inpt_var, him_m1, hiv_m1, hom_m1, hov_m1):
-        hom = T.dot(hom_m1, weights) * p_dropout + inpt_mean
+    def step(inpt_mean, inpt_var, him_m1, hiv_m1, hom_m1, hov_m1, W, n):
+        hom = T.dot(hom_m1, W) * p_dropout + inpt_mean
 
         p_keep = 1 - p_dropout
         dropout_var = p_dropout * (1 - p_dropout)
@@ -127,9 +127,9 @@ def recurrent_layer(in_mean, in_var, weights, f,
                        + (hom_m1 ** 2) * dropout_var
                        + hov_m1 * p_keep ** 2)
 
-        hov = T.dot(element_var, weights ** 2) + inpt_var
+        hov = T.dot(element_var, W ** 2) + inpt_var
 
-        hom, hov = _normalize(hom, hov, n_inpt, declare, normalize)
+        hom, hov = _normalize(hom, hov, n, declare, normalize)
         fhom, fhov = f(hom, hov)
 
         return hom, hov, fhom, fhov
@@ -144,13 +144,11 @@ def recurrent_layer(in_mean, in_var, weights, f,
     (hidden_in_mean_rec, hidden_in_var_rec, hidden_mean_rec, hidden_var_rec), _ = theano.scan(
         step,
         sequences=[in_mean, in_var],
+        non_sequences=[weights, n_inpt],
         outputs_info=[T.zeros_like(in_mean[0]),
                       T.zeros_like(in_mean[0]),
                       initial_hidden_mean,
                       initial_hidden_var])
-
-    #hidden_mean_rec, hidden_var_rec = f(
-    #    hidden_in_mean_rec, hidden_in_var_rec)
 
     return (hidden_in_mean_rec, hidden_in_var_rec,
             hidden_mean_rec, hidden_var_rec)
@@ -158,7 +156,7 @@ def recurrent_layer(in_mean, in_var, weights, f,
 
 def recurrent_layer_stateful(
         in_mean, in_var, weights, f, initial_hidden_mean, initial_hidden_var,
-        p_dropout, n_inpt, declare, normalize):
+        p_dropout, n_inpt, declare, normalize, bias):
     # TODO: documentation needs to explain the stateful thing.
     """Return a theano variable representing a recurrent layer.
 
@@ -208,8 +206,8 @@ def recurrent_layer_stateful(
         activations after the application of ``f``.
     """
     def step(inpt_mean, inpt_var, state_mean_tm1, state_var_tm1,
-             him_m1, hiv_m1, hom_m1, hov_m1):
-        hom = T.dot(hom_m1, weights) * p_dropout + inpt_mean
+             him_m1, hiv_m1, hom_m1, hov_m1, W, b, n):
+        hom = T.dot(hom_m1, W) * p_dropout + inpt_mean + b
 
         p_keep = 1 - p_dropout
         dropout_var = p_dropout * (1 - p_dropout)
@@ -218,13 +216,15 @@ def recurrent_layer_stateful(
                        + (hom_m1 ** 2) * dropout_var
                        + hov_m1 * p_keep ** 2)
 
-        hov = T.dot(element_var, weights ** 2) + inpt_var
+        hov = T.dot(element_var, W ** 2) + inpt_var
 
         state_mean_tm1 *= p_keep
         state_var_tm1 *= dropout_var ** 2
 
-        hom, hov = _normalize(hom, hov, n_inpt, declare, normalize)
-        state_mean_tm1, state_var_tm1 = _normalize(state_mean_tm1, state_var_tm1, n_inpt, declare, normalize)
+        # for lstms hom/hov is 4x the n_inpt size
+        nn = getattr(f, 'in_size', 1) * n
+        hom, hov = _normalize(hom, hov, nn, declare, normalize)
+        state_mean_tm1, state_var_tm1 = _normalize(state_mean_tm1, state_var_tm1, n, declare, normalize)
         state_mean, state_var, fhom, fhov = f(
             state_mean_tm1, state_var_tm1, hom, hov)
 
@@ -241,6 +241,7 @@ def recurrent_layer_stateful(
     hidden_mean_rec, hidden_var_rec), _ = theano.scan(
         step,
         sequences=[in_mean, in_var],
+        non_sequences=[weights, bias, n_inpt],
         outputs_info=[T.zeros_like(initial_hidden_mean),
                       T.zeros_like(initial_hidden_mean) + 1e-8,
                       T.zeros_like(in_mean[0]),
