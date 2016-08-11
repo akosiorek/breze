@@ -362,7 +362,8 @@ class FastDropoutRnn(Layer):
                  p_dropout_hiddens=.5,
                  p_dropout_hidden_to_out=None,
                  pooling=None,
-                 declare=None, name=None, normalize=None):
+                 declare=None, name=None, normalize=None,
+                 use_bias=False):
         self.inpt = inpt
         self.n_inpt = n_inpt
         self.n_hiddens = n_hiddens
@@ -371,6 +372,7 @@ class FastDropoutRnn(Layer):
         self.out_transfer = out_transfer
         self.pooling = pooling
         self.normalize = normalize
+        self.use_bias = use_bias
 
         self.p_dropout_inpt = p_dropout_inpt
 
@@ -407,7 +409,7 @@ class FastDropoutRnn(Layer):
 
         recurrent = vp_sequential.FDRecurrent(
             pre_rec_mean, pre_rec_var, n_output, transfer, p_dropout=p_dropout,
-            declare=self.declare, normalize=self.normalize)
+            declare=self.declare, normalize=self.normalize, use_bias=self.use_bias)
         x_mean, x_var = recurrent.outputs
 
         self.layers += [affine, recurrent]
@@ -501,11 +503,11 @@ class BidirectFastDropoutRnn(FastDropoutRnn):
 
         recurrent_fw = vp_sequential.FDRecurrent(
             pre_rec_mean, pre_rec_var, n_output, transfer, p_dropout=p_dropout,
-            declare=self.declare, normalize=self.normalize)
+            declare=self.declare, normalize=self.normalize, use_bias=self.use_bias)
         recurrent_bw = vp_sequential.FDRecurrent(
             pre_rec_mean[::-1], pre_rec_var[::-1], n_output, transfer,
             p_dropout=p_dropout,
-            declare=self.declare, normalize=self.normalize)
+            declare=self.declare, normalize=self.normalize, use_bias=self.use_bias)
 
         x_mean = recurrent_fw.outputs[0] + recurrent_bw.outputs[0]
         x_var = recurrent_fw.outputs[1] + recurrent_bw.outputs[1]

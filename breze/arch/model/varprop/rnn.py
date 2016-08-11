@@ -67,9 +67,9 @@ def unflat_time(x, time_steps):
     return x.reshape((time_steps, x.shape[0] // time_steps, x.shape[1]))
 
 
-def recurrent_layer(in_mean, in_var, weights, f,
+def recurrent_layer(in_mean, in_var, weights, bias, f,
                     initial_hidden_mean, initial_hidden_var,
-                    p_dropout, n_inpt=None, declare=None, normalize=None):
+                    p_dropout, n_inpt, declare, normalize):
     """Return a theano variable representing a recurrent layer.
 
     Parameters
@@ -117,8 +117,8 @@ def recurrent_layer(in_mean, in_var, weights, f,
         Theano sequence tensor representing the varianceof the hidden
         activations after the application of ``f``.
     """
-    def step(inpt_mean, inpt_var, him_m1, hiv_m1, hom_m1, hov_m1, W, n):
-        hom = T.dot(hom_m1, W) * p_dropout + inpt_mean
+    def step(inpt_mean, inpt_var, him_m1, hiv_m1, hom_m1, hov_m1, W, b, n):
+        hom = T.dot(hom_m1, W) * p_dropout + inpt_mean + b
 
         p_keep = 1 - p_dropout
         dropout_var = p_dropout * (1 - p_dropout)
@@ -144,7 +144,7 @@ def recurrent_layer(in_mean, in_var, weights, f,
     (hidden_in_mean_rec, hidden_in_var_rec, hidden_mean_rec, hidden_var_rec), _ = theano.scan(
         step,
         sequences=[in_mean, in_var],
-        non_sequences=[weights, n_inpt],
+        non_sequences=[weights, bias, n_inpt],
         outputs_info=[T.zeros_like(in_mean[0]),
                       T.zeros_like(in_mean[0]),
                       initial_hidden_mean,
@@ -155,8 +155,8 @@ def recurrent_layer(in_mean, in_var, weights, f,
 
 
 def recurrent_layer_stateful(
-        in_mean, in_var, weights, f, initial_hidden_mean, initial_hidden_var,
-        p_dropout, n_inpt, declare, normalize, bias):
+        in_mean, in_var, weights, bias, f, initial_hidden_mean, initial_hidden_var,
+        p_dropout, n_inpt, declare, normalize):
     # TODO: documentation needs to explain the stateful thing.
     """Return a theano variable representing a recurrent layer.
 
