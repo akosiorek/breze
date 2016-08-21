@@ -3,7 +3,7 @@
 import theano.tensor as T
 
 from breze.arch.construct.neural import (
-    Mlp, FastDropoutMlp, Rnn, FastDropoutRnn, BidirectFastDropoutRnn)
+    Mlp, FastDropoutMlp, Rnn, FastDropoutRnn, BidirectFastDropoutRnn, WeightedBidirectFastDropoutRnn)
 
 from breze.arch.util import lookup
 from breze.arch.component import transfer as _transfer
@@ -423,6 +423,11 @@ class FastDropoutRnnDiagGauss(BaseFastDropoutRnnDistribution, DiagGauss):
 class FastDropoutBiRnnDiagGauss(FastDropoutRnnDiagGauss):
 
     model_klass = BidirectFastDropoutRnn
+
+
+class WeightedFastDropoutBiRnnDiagGauss(FastDropoutRnnDiagGauss):
+
+    model_klass = WeightedBidirectFastDropoutRnn
 
 
 class FastDropoutRnnConstDiagGauss(BaseFastDropoutRnnDistribution, DiagGauss):

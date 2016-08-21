@@ -514,3 +514,48 @@ class BidirectFastDropoutRnn(FastDropoutRnn):
 
         self.layers += [affine, recurrent_fw, recurrent_bw]
         return x_mean, x_var
+
+
+class WeightedBidirectFastDropoutRnn(FastDropoutRnn):
+
+    def _make_rec_layer(self, x_mean, x_var, n_inpt, n_output, transfer,
+                        tos, tis, p_dropout):
+        n_time_steps, _, _ = self.inpt.shape
+        x_mean_flat = wild_reshape(x_mean, (-1, n_inpt))
+        x_var_flat = wild_reshape(x_var, (-1, n_inpt))
+
+        affine = vp_simple.AffineNonlinear(
+            x_mean_flat, x_var_flat, n_inpt * tos, n_output * tis, 'identity',
+            declare=self.declare, normalize=self.normalize)
+        pre_rec_mean_flat, pre_rec_var_flat = affine.outputs
+
+        pre_rec_mean = wild_reshape(pre_rec_mean_flat,
+                                    (n_time_steps, -1, n_output * tis))
+        pre_rec_var = wild_reshape(pre_rec_var_flat,
+                                   (n_time_steps, -1, n_output * tis))
+
+        if p_dropout == 'parameterized':
+            p_dropout = self.declare((1,))
+            p_dropout = T.nnet.sigmoid(p_dropout) * 0.49 + 0.01
+
+        recurrent_fw = vp_sequential.FDRecurrent(
+            pre_rec_mean, pre_rec_var, n_output, transfer, p_dropout=p_dropout,
+            declare=self.declare, normalize=self.normalize, use_bias=self.use_bias)
+        recurrent_bw = vp_sequential.FDRecurrent(
+            pre_rec_mean[::-1], pre_rec_var[::-1], n_output, transfer,
+            p_dropout=p_dropout,
+            declare=self.declare, normalize=self.normalize, use_bias=self.use_bias)
+
+        h_mean_flat = T.concatenate((recurrent_fw.outputs[0], recurrent_bw.outputs[0]), axis=-1).reshape((-1, 2 * n_output))
+        h_var_flat = T.concatenate((recurrent_fw.outputs[1], recurrent_bw.outputs[1]), axis=-1).reshape((-1, 2 * n_output))
+
+        affine_out = vp_simple.AffineNonlinear(
+            h_mean_flat, h_var_flat, 2 * n_output, n_output, transfer,
+            declare=self.declare, normalize=self.normalize)
+
+        x_mean, x_var = affine_out.outputs
+        x_mean = x_mean.reshape((n_time_steps, -1, n_output))
+        x_var = x_var.reshape((n_time_steps, -1, n_output))
+
+        self.layers += [affine, recurrent_fw, recurrent_bw, affine_out]
+        return x_mean, x_var
