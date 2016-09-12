@@ -345,24 +345,11 @@ class StochasticRnn(GenericVariationalAutoEncoder):
 
                 self.parameters[layer.bias][...] = 0
 
-    #def _make_gen_hidden(self):
-    #    hidden_exprs = [T.concatenate(i.recurrent.outputs, 2)
-    #                    for i in self.vae.gen.hidden_layers]
-
-    #    return self.function(['inpt'], hidden_exprs)
-
-    #def gen_hidden(self, X):
-    #    if getattr(self, 'f_gen_hiddens', None) is None:
-    #        self.f_gen_hiddens = self._make_gen_hidden()
-    #    return self.f_gen_hiddens(X)
-
     def sample(self, n_time_steps, prefix=None, visible_map=False):
         if prefix is None:
             raise ValueError('need to give prefix')
 
         if not hasattr(self, 'f_gen'):
-            vis_sample = self.vae.gen.inpt
-
             inpt_m1 = T.tensor3('inpt_m1')
             inpt_m1.tag.test_value = np.zeros((3, 2, self.n_inpt))
 
@@ -371,22 +358,13 @@ class StochasticRnn(GenericVariationalAutoEncoder):
 
             gen_inpt_sub = T.concatenate([latent_prior_sample, inpt_m1], axis=2)
 
-            vis_sample = theano.clone(
-                vis_sample,
-                {self.vae.gen.inpt: gen_inpt_sub}
-            )
-
             gen_out_sub = theano.clone(
                 self.vae.gen.rnn.output, {self.vae.gen.inpt: gen_inpt_sub})
-            self._f_gen_output = self.function(
-                [inpt_m1, latent_prior_sample],
-                gen_out_sub, mode='FAST_COMPILE',
-                on_unused_input ='warn')
+            self._f_gen_output = self.function([inpt_m1, latent_prior_sample], gen_out_sub)
 
             out = self.vae.gen.sample() if not visible_map else self.vae.gen.maximum
-            self._f_visible_sample_by_gen_output = self.function(
-                [self.vae.gen.rnn.output], out,
-                on_unused_input ='warn')
+            self._f_visible_sample_by_gen_output = theano.function(
+                [self.vae.gen.rnn.output], out)
 
             def f_gen(inpt_m1, latent_prior_sample):
                 rnn_out = self._f_gen_output(inpt_m1, latent_prior_sample)
@@ -394,21 +372,18 @@ class StochasticRnn(GenericVariationalAutoEncoder):
 
             self.f_gen = f_gen
 
+        if not hasattr(self, 'f_sample'):
+            self.f_latent = self.function([self.inpt], self.vae.recog_sample)
+
+        dtype = theano.config.floatX
         prefix_length = prefix.shape[0]
-        S = np.empty(
-            (prefix.shape[0] + n_time_steps, prefix.shape[1],
-             prefix.shape[2])
-        ).astype(theano.config.floatX)
-        S[:prefix_length][...] = prefix
-        latent_samples = np.zeros(
-            (prefix.shape[0] + n_time_steps, prefix.shape[1], self.n_latent)
-            ).astype(theano.config.floatX)
-        latent_samples[prefix_length:] = np.random.standard_normal(
-            (n_time_steps, prefix.shape[1], self.n_latent))
+        S = np.concatenate((prefix,  np.empty((n_time_steps,) + prefix.shape[1:], dtype=dtype)))
+
+        latent_from_prior = np.random.standard_normal((n_time_steps, prefix.shape[1], self.n_latent)).astype(dtype)
+        latent_samples = np.concatenate((self.f_latent(prefix), latent_from_prior), axis=0)
+
         for i in range(n_time_steps):
-            p = self.f_gen(
-                S[:prefix_length + i], latent_samples[:prefix_length + i]
-            )[-1, :, :self.n_inpt]
-            S[prefix_length + i] = p
+            p = self.f_gen(S[:prefix_length + i], latent_samples[:prefix_length + i])
+            S[prefix_length + i] = p[-1, :, :self.n_inpt]
 
         return S[prefix_length:]
